@@ -1,0 +1,15 @@
+-- ============================================================
+-- Kafka 消费表：消费 Debezium 原始 CDC 事件（含 CDC 元字段）
+-- 表: {{ database }}.{{ kafka_table }}
+-- 自动生成，请勿手工改动（改 tables.yaml 后重新 generate）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS {{ database }}.{{ kafka_table }}
+(
+{{ columns_block }}
+    -- CDC 内置元字段（由 Debezium unwrap SMT 注入）
+    `__op` String,
+    `__source_ts_ms` UInt64
+)
+ENGINE = Kafka
+SETTINGS
+{{ kafka_settings_block }};

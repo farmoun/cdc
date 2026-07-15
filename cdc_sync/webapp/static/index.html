@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CDC 同步监控</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>CDC 同步监控 <span class="sub">MySQL → Debezium → Kafka → ClickHouse</span></h1>
+    <div class="toolbar">
+      <label class="auto"><input type="checkbox" id="autorefresh" checked> 自动刷新 5s</label>
+      <button id="refreshBtn" class="btn">立即刷新</button>
+      <span id="lastUpdate" class="muted"></span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="monitor">监控</button>
+    <button class="tab" data-tab="config">配置</button>
+  </nav>
+
+  <!-- ============ 监控页 ============ -->
+  <div id="tab-monitor" class="tabpage">
+  <!-- 组件健康卡片 -->
+  <section class="cards" id="cards">
+    <div class="card" data-key="config"><div class="card-title">配置</div><div class="card-body">—</div></div>
+    <div class="card" data-key="connect"><div class="card-title">Debezium 连接器</div><div class="card-body">—</div></div>
+    <div class="card" data-key="kafka"><div class="card-title">Kafka</div><div class="card-body">—</div></div>
+    <div class="card" data-key="clickhouse"><div class="card-title">ClickHouse</div><div class="card-body">—</div></div>
+  </section>
+
+  <!-- 操作区 -->
+  <section class="panel">
+    <h2>操作</h2>
+    <div class="actions">
+      <button class="btn primary" data-action="deploy">发布/更新连接器</button>
+      <button class="btn warn" data-action="restart">重启连接器</button>
+      <button class="btn" data-action="apply">建 CK 表(三对象)</button>
+      <button class="btn" data-action="reconcile">运行对账</button>
+      <span id="actionMsg" class="action-msg"></span>
+    </div>
+  </section>
+
+  <div class="grid">
+    <!-- 连接器详情 -->
+    <section class="panel">
+      <h2>连接器任务</h2>
+      <div id="connectorBox" class="box">—</div>
+    </section>
+
+    <!-- Kafka 堆积 -->
+    <section class="panel">
+      <h2>Kafka 消费堆积 (lag)</h2>
+      <div id="lagBox" class="box">—</div>
+    </section>
+
+    <!-- CK 消费状态 -->
+    <section class="panel">
+      <h2>ClickHouse 消费状态</h2>
+      <div id="ckBox" class="box">—</div>
+    </section>
+
+    <!-- 对账 -->
+    <section class="panel">
+      <h2>数据对账 (MySQL vs ClickHouse)</h2>
+      <div id="reconcileBox" class="box">点击「运行对账」加载</div>
+    </section>
+  </div>
+  </div>
+
+  <!-- ============ 配置页 ============ -->
+  <div id="tab-config" class="tabpage" style="display:none">
+    <section class="panel">
+      <h2>连接配置</h2>
+      <div id="settingsForm" class="cfgform">加载中…</div>
+      <div class="actions" style="margin-top:14px">
+        <button id="saveSettings" class="btn primary">保存连接配置</button>
+        <button id="reloadSettings" class="btn">重新加载</button>
+        <button id="testAll" class="btn">全部测试连通性</button>
+        <span id="settingsMsg" class="action-msg"></span>
+      </div>
+      <p class="muted">保存即写入 <code>config/settings.yaml</code>（卷持久化），下次接口调用立即生效。含明文密码，请在内网使用。</p>
+    </section>
+
+    <section class="panel">
+      <h2>表清单 (tables.yaml)</h2>
+      <div class="actions" style="margin-bottom:10px">
+        <button id="reloadTables" class="btn">重新加载</button>
+        <button id="saveTables" class="btn primary">保存表清单</button>
+        <span id="tablesCount" class="muted"></span>
+        <span id="tablesMsg" class="action-msg"></span>
+      </div>
+      <textarea id="tablesEditor" class="editor" spellcheck="false" placeholder="tables.yaml…"></textarea>
+    </section>
+
+    <section class="panel">
+      <h2>从 SQL 导出文件导入表结构</h2>
+      <div class="cfgrow">
+        <label>源库名 <input id="impDatabase" type="text" placeholder="yibuapi"></label>
+        <label>目标库(可空) <input id="impTargetDb" type="text" placeholder="默认同源库"></label>
+        <label>目标表前缀(可空) <input id="impPrefix" type="text" placeholder="如 ods_"></label>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <input id="sqlFile" type="file" accept=".sql,.txt">
+        <button id="importSql" class="btn primary">解析并生成 tables.yaml</button>
+        <span id="importMsg" class="action-msg"></span>
+      </div>
+      <p class="muted">解析 mysqldump / Navicat 导出的 <code>.sql</code>，自动识别列/类型/主键，覆盖写入 tables.yaml。</p>
+    </section>
+  </div>
+
+  <footer class="muted">cdc_sync · 监控面板</footer>
+  <script src="/app.js"></script>
+</body>
+</html>

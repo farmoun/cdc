@@ -1,0 +1,12 @@
+-- ============================================================
+-- 物化视图：把 Kafka 表数据实时写入正式表，做 CDC 字段映射
+-- 视图: {{ database }}.{{ mv_name }}  →  {{ database }}.{{ target_table }}
+-- 自动生成，请勿手工改动（改 tables.yaml 后重新 generate）
+-- ============================================================
+CREATE MATERIALIZED VIEW IF NOT EXISTS {{ database }}.{{ mv_name }}
+TO {{ database }}.{{ target_table }}
+AS SELECT
+{{ columns_block }}
+    `__source_ts_ms` AS {{ ver_col }},
+    if(`__op` = 'd', 1, 0) AS {{ del_col }}
+FROM {{ database }}.{{ kafka_table }};

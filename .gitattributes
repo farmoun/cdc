@@ -1,0 +1,7 @@
+# 全仓库用 LF 换行（部署在 Linux，避免 .sh 脚本 CRLF 导致 bad interpreter）
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.j2 text eol=lf

@@ -1,0 +1,189 @@
+"""生成 ClickHouse 三对象建表 SQL（Kafka 表 / 正式表 / 物化视图）。
+
+对齐设计方案 §7.2。核心逻辑：
+- 推断 ORDER BY（去重键）：优先 tables.yaml 的 order_by，其次主键；无则告警退化。
+- 推断 PARTITION BY：优先 partition_by 时间列 → toYYYYMM(col)；无合适列则不分区。
+- Kafka 表列不加 Nullable/COMMENT；正式表可空列包 Nullable，ORDER BY 列强制非空。
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+from .config import ROOT, Settings, TableDef
+from . import type_map
+
+log = logging.getLogger("cdc_sync.ck")
+
+TEMPLATE_DIR = ROOT / "templates"
+
+_env = Environment(
+    loader=FileSystemLoader(str(TEMPLATE_DIR)),
+    undefined=StrictUndefined,
+    trim_blocks=True,
+    lstrip_blocks=True,
+    keep_trailing_newline=True,
+)
+
+
+@dataclass
+class TableSQL:
+    target_table: str
+    kafka_sql: str
+    target_sql: str
+    mv_sql: str
+
+    def ordered(self) -> list[tuple[str, str]]:
+        """执行顺序：正式表 → Kafka 表 → MV（MV 最后，避免消费到未建的正式表）。"""
+        return [
+            (f"{self.target_table} (target)", self.target_sql),
+            (f"{self.target_table}_kafka", self.kafka_sql),
+            (f"mv_{self.target_table}", self.mv_sql),
+        ]
+
+
+def _resolve_order_by(table: TableDef) -> str:
+    if table.order_by:
+        return table.order_by
+    pks = [c.name for c in table.columns if c.is_pk]
+    if pks:
+        # 反引号包裹，兼容 group/key/type 等保留字列名
+        return ", ".join(f"`{name}`" for name in pks)
+    log.warning(
+        "表 %s.%s 无主键且未指定 order_by：退化为按全部列去重（append 语义可能重复），"
+        "建议在 tables.yaml 显式指定唯一键。",
+        table.source_database, table.source_table,
+    )
+    return ", ".join(f"`{c.name}`" for c in table.columns)
+
+
+def _resolve_partition(table: TableDef) -> str | None:
+    col = table.partition_by
+    if col:
+        match = next((c for c in table.columns if c.name == col), None)
+        if match is None:
+            log.warning("表 %s 指定的 partition_by=%s 不在列中，忽略分区。", table.target_table, col)
+            return None
+        if not type_map.is_time_type(match.mysql_type):
+            log.warning("表 %s 的 partition_by=%s 非时间类型，忽略分区。", table.target_table, col)
+            return None
+        return f"toYYYYMM({col})"
+    # 未指定：不自动挑列，保持稳定（避免误选）。返回 None → 不分区。
+    return None
+
+
+def _order_by_columns(order_by: str) -> set[str]:
+    return {p.strip().strip("`") for p in order_by.split(",") if p.strip()}
+
+
+def meta_column_names(table: TableDef) -> tuple[str, str]:
+    """返回 (版本列名, 软删列名)。默认 version/is_deleted；
+    若与业务列撞名则加前缀，避免 CREATE 时列名冲突（如 setups.version）。"""
+    names = {c.name for c in table.columns}
+    ver = "version" if "version" not in names else "_cdc_version"
+    dele = "is_deleted" if "is_deleted" not in names else "_cdc_deleted"
+    return ver, dele
+
+
+def _kafka_settings_block(table: TableDef, settings: Settings, ck_major: int | None) -> str:
+    """组装 Kafka 引擎 SETTINGS（Python 侧，便于按 CK 大版本适配）。
+
+    注：kafka_broker_list/topic_list/group_name/format 等设置名在 CK 22.x~26.x 一致，
+    此处集中管理，未来若某大版本设置名有差异，只需在这里按 ck_major 分支即可。
+    """
+    quoted = {
+        "kafka_broker_list": settings.kafka_broker_list,
+        "kafka_topic_list": table.topic,
+        "kafka_group_name": table.consumer_group,   # 注意：是 group_name，不是 group_id
+        "kafka_format": "Avro",
+        "format_avro_schema_registry_url": settings.schema_registry_url,
+    }
+    lines = [f"    {k} = '{v}'" for k, v in quoted.items()]
+    lines.append("    kafka_skip_broken_messages = 1")
+    lines.append("    kafka_max_block_size = 8192")
+    return ",\n".join(lines)
+
+
+def build_table_sql(table: TableDef, settings: Settings, ck_major: int | None = None) -> TableSQL:
+    if not table.has_columns():
+        raise ValueError(
+            f"表 {table.source_database}.{table.source_table} 无列定义，"
+            f"请先 introspect 或在 tables.yaml 内联 columns。"
+        )
+
+    db = table.target_database
+    order_by = _resolve_order_by(table)
+    partition_expr = _resolve_partition(table)
+    ob_cols = _order_by_columns(order_by)
+
+    # Kafka 表列：不加 Nullable（Kafka 引擎按扁平事件解析），保持源类型
+    kafka_lines = [
+        f"    `{c.name}` {type_map.map_type(c.mysql_type, nullable=False)},"
+        for c in table.columns
+    ]
+
+    # 正式表列：可空包 Nullable，但 ORDER BY 列强制非空
+    target_lines = []
+    for c in table.columns:
+        in_key = c.name in ob_cols
+        ck_type = type_map.map_type(
+            c.mysql_type,
+            nullable=c.nullable,
+            allow_nullable=not in_key,
+        )
+        target_lines.append(f"    `{c.name}` {ck_type},")
+
+    # MV 映射列：与业务列同名直传
+    mv_lines = [f"    `{c.name}`," for c in table.columns]
+
+    ver_col, del_col = meta_column_names(table)
+
+    common = {
+        "database": db,
+        "target_table": table.target_table,
+        "kafka_table": table.kafka_table,
+        "mv_name": table.mv_name,
+    }
+
+    kafka_sql = _env.get_template("ck_kafka.sql.j2").render(
+        **common,
+        columns_block="\n".join(kafka_lines),
+        kafka_settings_block=_kafka_settings_block(table, settings, ck_major),
+    )
+    target_sql = _env.get_template("ck_target.sql.j2").render(
+        **common,
+        columns_block="\n".join(target_lines),
+        order_by=order_by,
+        partition_expr=partition_expr,
+        comment=table.comment,
+        ver_col=ver_col,
+        del_col=del_col,
+    )
+    mv_sql = _env.get_template("ck_mv.sql.j2").render(
+        **common,
+        columns_block="\n".join(mv_lines),
+        ver_col=ver_col,
+        del_col=del_col,
+    )
+
+    return TableSQL(
+        target_table=table.target_table,
+        kafka_sql=kafka_sql,
+        target_sql=target_sql,
+        mv_sql=mv_sql,
+    )
+
+
+def write_sql_files(table_sql: TableSQL, out_dir: Path) -> list[Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    combined = "\n".join(
+        [table_sql.target_sql, table_sql.kafka_sql, table_sql.mv_sql]
+    )
+    path = out_dir / f"{table_sql.target_table}.sql"
+    path.write_text(combined, encoding="utf-8")
+    written.append(path)
+    return written

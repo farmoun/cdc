@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# 生成产物
+out/
+
+# 环境变量与凭证（含密码，勿提交）
+.env
+docker/.env
+*.env
+!.env.example
+!docker/.env.example
+
+# 运行时生成的配置（网页保存/播种）
+config/settings.yaml
+config/schema_cache.json

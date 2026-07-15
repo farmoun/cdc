@@ -1,0 +1,17 @@
+-- ============================================================
+-- 正式落地表：ReplacingMergeTree 按 version 合并去重，软删除标记
+-- 表: {{ database }}.{{ target_table }}
+-- 查询请统一使用: SELECT ... FROM {{ target_table }} FINAL WHERE is_deleted = 0
+-- 自动生成，请勿手工改动（改 tables.yaml 后重新 generate）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS {{ database }}.{{ target_table }}
+(
+{{ columns_block }}
+    `{{ ver_col }}` UInt64 COMMENT '数据版本时间戳(__source_ts_ms)',
+    `{{ del_col }}` UInt8 DEFAULT 0 COMMENT '是否删除 0否1是'
+)
+ENGINE = ReplacingMergeTree({{ ver_col }})
+ORDER BY ({{ order_by }})
+{% if partition_expr %}PARTITION BY {{ partition_expr }}
+{% endif %}{% if comment %}COMMENT '{{ comment }}'
+{% endif %};

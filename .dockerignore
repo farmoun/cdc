@@ -1,0 +1,9 @@
+.venv/
+.idea/
+out/
+__pycache__/
+*.pyc
+config/settings.yaml
+config/schema_cache.json
+.git/
+docker/.env

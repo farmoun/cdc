@@ -1,0 +1,126 @@
+# =============================================================
+# CDC 同步栈 · 单节点一键版（部署在 ClickHouse 所在服务器 B 服）
+# MySQL(A 服) / ClickHouse(B 服宿主机原生) 为外部服务，由 .env 配置
+# 一键启动：cp .env.example .env && 改好 .env && docker compose up -d --build
+#
+# 单节点 Kafka(KRaft)，含堆内存限制，约 3~4G 内存即可跑。
+# 需要高可用(RF=3, 容忍单节点故障)时改用：docker compose -f docker-compose.ha.yml up -d --build
+# =============================================================
+services:
+
+  # ---------------- Kafka (KRaft 单节点) ----------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: cdc-kafka
+    ports:
+      - "9094:9094"          # 宿主机映射：原生 ClickHouse 用 localhost:9094 消费
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://${KAFKA_ADVERTISED_HOST:-localhost}:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: "-Xmx768M -Xms512M"
+      CLUSTER_ID: cdc-kraft-cluster-0001
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+
+  # ---------------- Schema Registry ----------------
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.1
+    container_name: cdc-schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+      SCHEMA_REGISTRY_HEAP_OPTS: "-Xmx384M"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ---------------- Kafka Connect (Debezium) ----------------
+  connect:
+    build:
+      context: ..
+      dockerfile: docker/connect.Dockerfile
+    image: cdc-connect:latest
+    container_name: cdc-connect
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_started
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: cdc-connect-cluster
+      CONNECT_CONFIG_STORAGE_TOPIC: _cdc_connect_configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _cdc_connect_offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _cdc_connect_status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+      KAFKA_HEAP_OPTS: "-Xmx768M -Xms512M"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+
+  # ---------------- 监控 Web 应用（就是你现在这个页面）----------------
+  cdc-monitor:
+    build:
+      context: ..
+      dockerfile: docker/monitor.Dockerfile
+    image: cdc-monitor:latest
+    container_name: cdc-monitor
+    depends_on:
+      connect:
+        condition: service_started
+    env_file:
+      - .env
+    ports:
+      - "${MONITOR_PORT:-8080}:8000"
+    extra_hosts:
+      # 让容器用 host.docker.internal 访问宿主机上的原生 ClickHouse
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../config:/app/config      # settings.yaml / tables.yaml 持久化，可网页编辑
+      - ../cdc_sync:/app/cdc_sync  # 应用代码（改了 exec 重跑即生效，不用重建镜像）
+      - ../templates:/app/templates # CK 建表模板
+      - ../main.py:/app/main.py
+      - ../out:/app/out            # 生成产物持久化
+
+volumes:
+  kafka-data:

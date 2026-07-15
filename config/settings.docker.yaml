@@ -1,0 +1,39 @@
+# =============================================================
+# 容器内使用的配置（全部由 docker/.env 注入的环境变量驱动）
+# cdc-monitor 容器以 --settings config/settings.docker.yaml 加载本文件
+# =============================================================
+
+mysql:
+  host: ${MYSQL_HOST}              # A 服务器（远程 MySQL）
+  port: ${MYSQL_PORT}
+  user: ${MYSQL_USER}
+  password: ${MYSQL_PASSWORD}
+  charset: utf8mb4
+
+clickhouse:
+  host: ${CK_HOST}                 # B 服务器宿主机（host-gateway / 宿主 IP）
+  port: ${CK_HTTP_PORT}
+  user: ${CK_USER}
+  password: ${CK_PASSWORD}
+  database: ${CK_DATABASE}
+  secure: false
+
+kafka:
+  # CK 引擎表用：宿主机可达地址（原生 CK 不在 docker 网络内）
+  broker_list: ${KAFKA_BROKER_FOR_CK}
+  # 容器内组件（连接器 history / 监控 lag）用：docker 网络内地址
+  internal_broker_list: ${KAFKA_INTERNAL_BROKER}
+
+schema_registry:
+  url: ${SCHEMA_REGISTRY_URL}
+
+connect:
+  url: ${CONNECT_URL}
+
+debezium:
+  connector_name: ${DBZ_CONNECTOR_NAME}
+  server_name: ${DBZ_SERVER_NAME}
+  server_id: ${DBZ_SERVER_ID}
+  tasks_max: ${DBZ_TASKS_MAX}
+  snapshot_mode: ${DBZ_SNAPSHOT_MODE}
+  history_topic: ${DBZ_HISTORY_TOPIC}
