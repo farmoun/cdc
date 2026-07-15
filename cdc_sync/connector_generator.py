@@ -22,7 +22,9 @@ def build_connector(tables: list[TableDef], settings: Settings) -> dict:
 
     config = {
         "connector.class": "io.debezium.connector.mysql.MySqlConnector",
-        "tasks.max": str(dbz.tasks_max),
+        # Debezium MySQL 连接器只支持单 task（tasks.max 必须为 1，否则报
+        # "Only a single connector task may be started" 且 0 个 task 启动）
+        "tasks.max": "1",
         "database.hostname": my.host,
         "database.port": str(my.port),
         "database.user": my.user,
