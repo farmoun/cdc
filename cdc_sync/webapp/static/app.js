@@ -479,7 +479,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
-  // 从后端读监控开关状态并恢复（换浏览器/刷新都一致）
+  // 无论开关状态，先拉一次当前状态显示（停止=静态快照，可手动刷新）
+  refreshAll();
+  // 再从后端恢复"自动刷新"开关状态
   getJSON('/api/ui-state').then((r) => {
     if (r.ok && r.data && r.data.monitoring) applyMonitoring(true);
   }).catch(() => {});
