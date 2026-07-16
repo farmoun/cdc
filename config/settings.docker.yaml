@@ -26,6 +26,7 @@ kafka:
 
 schema_registry:
   url: ${SCHEMA_REGISTRY_URL}
+  url_for_ck: http://localhost:8081     # CK(宿主机原生)用：Schema Registry 宿主机映射端口
 
 connect:
   url: ${CONNECT_URL}

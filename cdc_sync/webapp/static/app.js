@@ -186,7 +186,7 @@ const SETTINGS_SCHEMA = [
     ['broker_list', 'CK消费用 broker(宿主机地址)', 'text'],
     ['internal_broker_list', '容器内 broker(kafka:9092)', 'text'],
   ]],
-  ['schema_registry', 'Schema Registry', [['url', 'URL', 'text']]],
+  ['schema_registry', 'Schema Registry', [['url', 'URL(容器内)', 'text'], ['url_for_ck', 'URL(CK宿主机用)', 'text']]],
   ['connect', 'Kafka Connect', [['url', 'REST URL', 'text']]],
   ['debezium', 'Debezium 连接器', [
     ['connector_name', '连接器名', 'text'], ['server_name', 'server.name', 'text'],

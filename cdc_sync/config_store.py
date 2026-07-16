@@ -31,7 +31,7 @@ _EMPTY_SETTINGS = {
     "mysql": {"host": "", "port": 3306, "user": "debezium", "password": "", "charset": "utf8mb4"},
     "clickhouse": {"host": "", "port": 8123, "user": "default", "password": "", "database": "default", "secure": False},
     "kafka": {"broker_list": "localhost:9094", "internal_broker_list": "kafka1:9092"},
-    "schema_registry": {"url": "http://schema-registry:8081"},
+    "schema_registry": {"url": "http://schema-registry:8081", "url_for_ck": "http://localhost:8081"},
     "connect": {"url": "http://connect:8083"},
     "debezium": {"connector_name": "cdc-connector", "server_name": "cdc", "server_id": 1001,
                  "tasks_max": 4, "snapshot_mode": "initial", "history_topic": "schema-changes.cdc"},

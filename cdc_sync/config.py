@@ -91,6 +91,7 @@ class Settings:
     kafka_broker_list: str = "kafka:9092"
     kafka_internal_broker_list: str = "kafka:9092"
     schema_registry_url: str = "http://schema-registry:8081"
+    schema_registry_url_for_ck: str = "http://localhost:8081"
     connect_url: str = "http://connect:8083"
     debezium: DebeziumConf = field(default_factory=DebeziumConf)
 
@@ -151,13 +152,16 @@ def build_settings(raw: dict) -> Settings:
         snapshot_mode=dbz.get("snapshot_mode", "initial"),
         history_topic=dbz.get("history_topic", "schema-changes.mysql-business"),
     )
+    sr = raw.get("schema_registry") or {}
     return Settings(
         mysql=mysql,
         clickhouse=clickhouse,
         kafka_broker_list=broker_list,
         # 容器内组件（Connect history / 监控）用的内部地址；缺省回退宿主地址
         kafka_internal_broker_list=kafka.get("internal_broker_list", broker_list),
-        schema_registry_url=(raw.get("schema_registry") or {}).get("url", "http://schema-registry:8081"),
+        schema_registry_url=sr.get("url", "http://schema-registry:8081"),
+        # CK(宿主机原生) 用的 Schema Registry 地址；缺省宿主机映射端口
+        schema_registry_url_for_ck=sr.get("url_for_ck", "http://localhost:8081"),
         connect_url=(raw.get("connect") or {}).get("url", "http://connect:8083"),
         debezium=debezium,
     )

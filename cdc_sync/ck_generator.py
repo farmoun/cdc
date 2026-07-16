@@ -98,8 +98,10 @@ def _kafka_settings_block(table: TableDef, settings: Settings, ck_major: int | N
         "kafka_broker_list": settings.kafka_broker_list,
         "kafka_topic_list": table.topic,
         "kafka_group_name": table.consumer_group,   # 注意：是 group_name，不是 group_id
-        "kafka_format": "Avro",
-        "format_avro_schema_registry_url": settings.schema_registry_url,
+        # Debezium 用 Confluent Schema Registry 的 Avro 线格式 → CK 必须用 AvroConfluent（不是 Avro）
+        "kafka_format": "AvroConfluent",
+        # AvroConfluent 会按 schema id 去这个地址取 schema；CK 在宿主机，用宿主机可达地址
+        "format_avro_schema_registry_url": settings.schema_registry_url_for_ck,
     }
     lines = [f"    {k} = '{v}'" for k, v in quoted.items()]
     lines.append("    kafka_skip_broken_messages = 1")
