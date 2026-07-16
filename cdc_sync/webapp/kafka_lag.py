@@ -78,7 +78,12 @@ def topic_lag(settings: Settings, tables: list[TableDef]) -> list[dict]:
                     continue
                 tps = [TopicPartition(t.topic, p) for p in parts]
                 end = consumer.end_offsets(tps)
-                committed = admin.list_consumer_group_offsets(t.consumer_group)
+                # kafka-python 3.x：list_group_offsets({group: None}) → {group: {tp: OffsetAndMetadata}}
+                try:
+                    res = admin.list_group_offsets({t.consumer_group: None})
+                    committed = res.get(t.consumer_group, {}) or {}
+                except Exception:  # noqa: BLE001
+                    committed = {}
 
                 end_sum = sum(end.get(tp, 0) for tp in tps)
                 committed_sum = 0
