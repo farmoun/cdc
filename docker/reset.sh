@@ -35,15 +35,9 @@ echo "▶ [1/4] 删除连接器 ${DBZ_CONNECTOR_NAME} ..."
 docker compose exec -T connect curl -s -o /dev/null -w "  HTTP %{http_code}\n" \
   -X DELETE "http://localhost:8083/connectors/${DBZ_CONNECTOR_NAME}" 2>/dev/null || echo "  (连接器不存在或 Connect 未起，跳过)"
 
-# 2) 清空 ClickHouse 目标库（趁监控容器还在）
+# 2) 清空 ClickHouse 目标库（用 App 自己的 settings.yaml 里的正确密码，趁监控容器还在）
 echo "▶ [2/4] 清空 ClickHouse ${CK_DATABASE} 库 ..."
-docker compose exec -T cdc-monitor python - <<PY || echo "  (CK 清空失败，可稍后手动 DROP DATABASE)"
-import clickhouse_connect as c
-cli = c.get_client(host="${CK_HOST}", port=${CK_HTTP_PORT}, username="${CK_USER}", password="${CK_PASSWORD}")
-cli.command("DROP DATABASE IF EXISTS ${CK_DATABASE}")
-cli.command("CREATE DATABASE ${CK_DATABASE}")
-print("  CK ${CK_DATABASE} 已重置")
-PY
+docker compose exec -T cdc-monitor python main.py reset-ck || echo "  (CK 清空失败，可稍后手动 DROP DATABASE)"
 
 # 3) 停栈并清空 Kafka 数据卷（清掉所有 topic / 位点 / schema历史）
 echo "▶ [3/4] 停栈并清空 Kafka 数据卷 ..."

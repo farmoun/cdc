@@ -104,6 +104,24 @@ def cmd_render_config(args) -> int:
     return 0
 
 
+def cmd_reset_ck(args) -> int:
+    """用 App 自己的配置(settings.yaml，密码正确)清空并重建 CK 目标库。"""
+    settings, _ = _load(args)
+    db = settings.clickhouse.database
+    try:
+        client = ck_client._client(settings.clickhouse)
+        try:
+            client.command(f"DROP DATABASE IF EXISTS {db}")
+            client.command(f"CREATE DATABASE {db}")
+        finally:
+            client.close()
+        log.info("✓ ClickHouse 库 %s 已清空重建", db)
+        return 0
+    except Exception as e:  # noqa: BLE001
+        log.error("清空 CK 库失败：%s", e)
+        return 1
+
+
 def cmd_bootstrap(args) -> int:
     """一键初始化：等 Connect 就绪 → 建 CK 三对象 → 发布连接器（幂等，可重复跑）。"""
     import time
@@ -324,6 +342,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--wait", type=int, default=180, help="等待 Connect 就绪的秒数（默认 180）")
     sp.add_argument("--introspect", action="store_true", help="缺列时自动连 MySQL 内省")
     sp.set_defaults(func=cmd_bootstrap)
+
+    sp = sub.add_parser("reset-ck", help="清空并重建 CK 目标库（用 App 配置的正确密码）")
+    sp.set_defaults(func=cmd_reset_ck)
 
     return p
 
