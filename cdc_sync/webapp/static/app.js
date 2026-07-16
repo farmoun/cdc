@@ -317,8 +317,84 @@ async function importSql() {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   $('#tab-monitor').style.display = name === 'monitor' ? '' : 'none';
+  $('#tab-query').style.display = name === 'query' ? '' : 'none';
   $('#tab-config').style.display = name === 'config' ? '' : 'none';
   if (name === 'config') { loadSettings(); loadTables(); }
+  if (name === 'query') loadSavedQueries();
+}
+
+// ================= 查询页 =================
+
+let savedQueriesMap = {};
+
+async function runQuery() {
+  const msg = $('#queryMsg'); const box = $('#queryResult');
+  const sql = $('#queryInput').value.trim();
+  if (!sql) { msg.textContent = '请输入查询语句'; msg.className = 'action-msg err'; return; }
+  localStorage.setItem('cdc_last_query', sql);      // 记住上次查询
+  msg.textContent = '执行中…'; msg.className = 'action-msg';
+  box.innerHTML = '<span class="muted">查询中…</span>';
+  const r = await fetch('/api/query', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql }),
+  }).then((x) => x.json());
+  if (!r.ok) { msg.textContent = ''; box.innerHTML = `<div class="errline">✗ ${esc(r.error)}</div>`; return; }
+  const d = r.data;
+  msg.textContent = `${d.row_count} 行` + (d.truncated ? '（已截断到 1000 行）' : ''); msg.className = 'action-msg ok';
+  if (!d.columns.length) { box.innerHTML = '<span class="muted">执行成功，无结果集</span>'; return; }
+  let html = '<table><tr>' + d.columns.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr>';
+  for (const row of d.rows) {
+    html += '<tr>' + row.map((v) => `<td>${esc(v)}</td>`).join('') + '</tr>';
+  }
+  html += '</table>';
+  box.innerHTML = html;
+}
+
+async function loadSavedQueries() {
+  const box = $('#savedQueries');
+  const res = await getJSON('/api/queries');
+  if (!res.ok) { box.innerHTML = `<div class="errline">✗ ${esc(res.error)}</div>`; return; }
+  const items = res.data;
+  if (!items.length) { box.innerHTML = '<span class="muted">还没有保存的查询</span>'; return; }
+  let html = '<table><tr><th>名称</th><th>语句</th><th></th></tr>';
+  for (const q of items) {
+    const sqlPreview = (q.sql || '').replace(/\s+/g, ' ').slice(0, 80);
+    html += `<tr><td><b>${esc(q.name)}</b></td><td class="muted">${esc(sqlPreview)}</td>`
+      + `<td><button class="btn small" data-load="${esc(q.name)}">载入</button>`
+      + `<button class="btn small" data-del="${esc(q.name)}">删除</button></td></tr>`;
+  }
+  html += '</table>';
+  box.innerHTML = html;
+  // 保存完整 sql 供载入
+  savedQueriesMap = {};
+  items.forEach((q) => { savedQueriesMap[q.name] = q.sql; });
+  box.querySelectorAll('[data-load]').forEach((b) =>
+    b.addEventListener('click', () => { $('#queryInput').value = savedQueriesMap[b.dataset.load] || ''; $('#queryName').value = b.dataset.load; switchTabToQueryInput(); }));
+  box.querySelectorAll('[data-del]').forEach((b) =>
+    b.addEventListener('click', () => deleteSavedQuery(b.dataset.del)));
+}
+
+function switchTabToQueryInput() {
+  $('#queryInput').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function saveQuery() {
+  const msg = $('#queryMsg');
+  const name = $('#queryName').value.trim();
+  const sql = $('#queryInput').value.trim();
+  if (!name) { msg.textContent = '请填写查询名字'; msg.className = 'action-msg err'; return; }
+  if (!sql) { msg.textContent = '查询语句为空'; msg.className = 'action-msg err'; return; }
+  const r = await fetch('/api/queries', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, sql }),
+  }).then((x) => x.json());
+  if (r.ok) { msg.textContent = `✓ 已保存「${name}」`; msg.className = 'action-msg ok'; loadSavedQueries(); }
+  else { msg.textContent = '✗ ' + r.error; msg.className = 'action-msg err'; }
+}
+
+async function deleteSavedQuery(name) {
+  const r = await fetch('/api/queries/' + encodeURIComponent(name), { method: 'DELETE' }).then((x) => x.json());
+  if (r.ok) loadSavedQueries();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -334,6 +410,14 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#saveTables').addEventListener('click', saveTables);
   $('#reloadTables').addEventListener('click', loadTables);
   $('#importSql').addEventListener('click', importSql);
+  // 查询页
+  $('#runQuery').addEventListener('click', runQuery);
+  $('#saveQuery').addEventListener('click', saveQuery);
+  $('#queryInput').addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
+  });
+  const last = localStorage.getItem('cdc_last_query');
+  if (last) $('#queryInput').value = last;
   refreshAll();
   scheduleRefresh();
 });

@@ -115,6 +115,35 @@ def kafka_consumers_status(conf: ClickHouseConf) -> list[dict]:
     return out
 
 
+def _jsonsafe(v):
+    """把不可 JSON 序列化的值（datetime/Decimal/bytes 等）转成字符串。"""
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return v
+    try:
+        return str(v)
+    except Exception:  # noqa: BLE001
+        return repr(v)
+
+
+def run_query(conf: ClickHouseConf, sql: str, max_rows: int = 1000) -> dict:
+    """执行任意 SQL，返回 {columns, rows, row_count, truncated}。
+
+    主要面向 SELECT/SHOW/DESCRIBE；写/DDL 语句若无结果集会返回空表。
+    结果行数超过 max_rows 时截断，标记 truncated=True。
+    """
+    client = _client(conf)
+    try:
+        result = client.query(sql)
+        cols = list(result.column_names or [])
+        rows = result.result_rows or []
+        truncated = len(rows) > max_rows
+        rows = rows[:max_rows]
+        out_rows = [[_jsonsafe(v) for v in row] for row in rows]
+        return {"columns": cols, "rows": out_rows, "row_count": len(out_rows), "truncated": truncated}
+    finally:
+        client.close()
+
+
 def count_alive(conf: ClickHouseConf, database: str, table: str, del_col: str = "is_deleted") -> int:
     """统计正式表有效行数（FINAL + 过滤软删除）。"""
     client = _client(conf)

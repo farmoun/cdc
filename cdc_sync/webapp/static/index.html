@@ -18,6 +18,7 @@
 
   <nav class="tabs">
     <button class="tab active" data-tab="monitor">监控</button>
+    <button class="tab" data-tab="query">查询</button>
     <button class="tab" data-tab="config">配置</button>
   </nav>
 
@@ -68,6 +69,27 @@
       <div id="reconcileBox" class="box">点击「运行对账」加载</div>
     </section>
   </div>
+  </div>
+
+  <!-- ============ 查询页 ============ -->
+  <div id="tab-query" class="tabpage" style="display:none">
+    <section class="panel">
+      <h2>ClickHouse 便捷查询</h2>
+      <textarea id="queryInput" class="editor" spellcheck="false"
+        placeholder="输入 SQL，例如：SELECT * FROM yibuapi.checkins FINAL LIMIT 20"></textarea>
+      <div class="actions" style="margin-top:10px">
+        <button id="runQuery" class="btn primary">执行 (Ctrl+Enter)</button>
+        <input id="queryName" type="text" placeholder="给这条查询起个名字" style="min-width:200px">
+        <button id="saveQuery" class="btn">保存查询</button>
+        <span id="queryMsg" class="action-msg"></span>
+      </div>
+      <div id="queryResult" class="box" style="margin-top:14px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>已保存的查询</h2>
+      <div id="savedQueries" class="box">—</div>
+    </section>
   </div>
 
   <!-- ============ 配置页 ============ -->

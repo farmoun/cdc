@@ -23,6 +23,7 @@ from .. import (
     config_store,
     connect_client,
     connector_generator,
+    query_store,
     reconcile as reconcile_mod,
     sql_parser,
 )
@@ -321,6 +322,57 @@ async def api_test(component: str, request: Request):
         return _err(f"配置解析失败：{e}")
     try:
         return _ok(conn_test.run_test(component, settings))
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+# ----------------------------- 便捷查询端点 -----------------------------
+
+@app.post("/api/query")
+async def api_query(request: Request):
+    """对 ClickHouse 执行任意 SQL，返回列/行（截断 1000 行）。"""
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return _err(f"请求体非法 JSON：{e}")
+    sql = (body.get("sql") or "").strip()
+    if not sql:
+        return _err("查询语句为空")
+    try:
+        settings = config.load_settings(_settings_path())
+    except Exception as e:  # noqa: BLE001
+        return _err(f"配置加载失败：{e}")
+    try:
+        return _ok(ck_client.run_query(settings.clickhouse, sql))
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.get("/api/queries")
+def api_list_queries():
+    try:
+        return _ok(query_store.load_queries())
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.post("/api/queries")
+async def api_save_query(request: Request):
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return _err(f"请求体非法 JSON：{e}")
+    try:
+        items = query_store.save_query(body.get("name", ""), body.get("sql", ""))
+        return _ok(items)
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.delete("/api/queries/{name}")
+def api_delete_query(name: str):
+    try:
+        return _ok(query_store.delete_query(name))
     except Exception as e:  # noqa: BLE001
         return _err(e)
 
