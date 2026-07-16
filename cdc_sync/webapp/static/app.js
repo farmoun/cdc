@@ -169,6 +169,7 @@ let monitoring = false;
 
 function startMonitor() {
   monitoring = true;
+  localStorage.setItem('cdc_monitoring', '1');
   const b = $('#monitorToggle');
   b.textContent = '⏸ 停止监控';
   b.classList.remove('primary'); b.classList.add('warn');
@@ -180,6 +181,7 @@ function startMonitor() {
 
 function stopMonitor() {
   monitoring = false;
+  localStorage.setItem('cdc_monitoring', '0');
   if (timer) { clearInterval(timer); timer = null; }
   const b = $('#monitorToggle');
   b.textContent = '▶ 开始监控';
@@ -467,5 +469,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
-  // 监控默认不自动启动，点「开始监控」才开始
+  // 恢复上次的监控开关状态（刷新页面后保持）
+  if (localStorage.getItem('cdc_monitoring') === '1') startMonitor();
 });
