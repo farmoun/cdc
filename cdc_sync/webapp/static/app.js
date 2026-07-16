@@ -167,29 +167,39 @@ async function refreshAll() {
 let timer = null;
 let monitoring = false;
 
-function startMonitor() {
-  monitoring = true;
-  localStorage.setItem('cdc_monitoring', '1');
+// 应用监控开/关（更新UI+定时器）。persist=true 时同步到后端。
+function applyMonitoring(on) {
+  monitoring = on;
   const b = $('#monitorToggle');
-  b.textContent = '⏸ 停止监控';
-  b.classList.remove('primary'); b.classList.add('warn');
-  $('#monitorState').textContent = '监控中（每 5s 刷新）';
-  refreshAll();
-  if (timer) clearInterval(timer);
-  timer = setInterval(refreshAll, 5000);
+  if (on) {
+    b.textContent = '⏸ 停止监控';
+    b.classList.remove('primary'); b.classList.add('warn');
+    $('#monitorState').textContent = '监控中（每 5s 刷新）';
+    refreshAll();
+    if (timer) clearInterval(timer);
+    timer = setInterval(refreshAll, 5000);
+  } else {
+    if (timer) { clearInterval(timer); timer = null; }
+    b.textContent = '▶ 开始监控';
+    b.classList.add('primary'); b.classList.remove('warn');
+    $('#monitorState').textContent = '监控已停止';
+  }
 }
 
-function stopMonitor() {
-  monitoring = false;
-  localStorage.setItem('cdc_monitoring', '0');
-  if (timer) { clearInterval(timer); timer = null; }
-  const b = $('#monitorToggle');
-  b.textContent = '▶ 开始监控';
-  b.classList.add('primary'); b.classList.remove('warn');
-  $('#monitorState').textContent = '监控已停止';
+async function persistMonitoring(on) {
+  try {
+    await fetch('/api/ui-state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monitoring: on }),
+    });
+  } catch (e) { /* 后端不可用时不阻塞前端 */ }
 }
 
-function toggleMonitor() { monitoring ? stopMonitor() : startMonitor(); }
+function toggleMonitor() {
+  const on = !monitoring;
+  applyMonitoring(on);
+  persistMonitoring(on);            // 状态存后端，换浏览器/刷新都保持
+}
 
 // ================= 配置页 =================
 
@@ -469,6 +479,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
-  // 恢复上次的监控开关状态（刷新页面后保持）
-  if (localStorage.getItem('cdc_monitoring') === '1') startMonitor();
+  // 从后端读监控开关状态并恢复（换浏览器/刷新都一致）
+  getJSON('/api/ui-state').then((r) => {
+    if (r.ok && r.data && r.data.monitoring) applyMonitoring(true);
+  }).catch(() => {});
 });

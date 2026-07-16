@@ -26,6 +26,7 @@ from .. import (
     query_store,
     reconcile as reconcile_mod,
     sql_parser,
+    ui_state,
 )
 from . import conn_test, kafka_lag
 
@@ -443,6 +444,28 @@ async def api_save_query(request: Request):
 def api_delete_query(name: str):
     try:
         return _ok(query_store.delete_query(name))
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+# ----------------------------- UI 状态（监控开关等）-----------------------------
+
+@app.get("/api/ui-state")
+def api_get_ui_state():
+    try:
+        return _ok(ui_state.load_state())
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.post("/api/ui-state")
+async def api_set_ui_state(request: Request):
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return _err(f"请求体非法 JSON：{e}")
+    try:
+        return _ok(ui_state.save_state(body))
     except Exception as e:  # noqa: BLE001
         return _err(e)
 

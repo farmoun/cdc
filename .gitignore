@@ -26,3 +26,4 @@ docker/.env
 config/settings.yaml
 config/schema_cache.json
 config/saved_queries.json
+config/ui_state.json
