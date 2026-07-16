@@ -28,7 +28,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_HEAP_OPTS: "-Xmx768M -Xms512M"
+      KAFKA_HEAP_OPTS: "-Xmx1024M -Xms512M"
+      # 允许大消息（logs/base64图片等大字段，单条 CDC 事件可能远超默认 1MB）
+      KAFKA_MESSAGE_MAX_BYTES: "${KAFKA_MAX_MESSAGE_BYTES:-67108864}"
+      KAFKA_REPLICA_FETCH_MAX_BYTES: "${KAFKA_MAX_MESSAGE_BYTES:-67108864}"
+      KAFKA_SOCKET_REQUEST_MAX_BYTES: "209715200"
       CLUSTER_ID: cdc-kraft-cluster-0001
     volumes:
       - kafka-data:/var/lib/kafka/data
@@ -91,7 +95,10 @@ services:
       CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
-      KAFKA_HEAP_OPTS: "-Xmx768M -Xms512M"
+      KAFKA_HEAP_OPTS: "-Xmx1536M -Xms768M"
+      # Connect worker 生产者默认允许大消息（连接器级也已 override）
+      CONNECT_PRODUCER_MAX_REQUEST_SIZE: "${KAFKA_MAX_MESSAGE_BYTES:-67108864}"
+      CONNECT_PRODUCER_COMPRESSION_TYPE: lz4
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
       interval: 20s

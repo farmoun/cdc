@@ -39,6 +39,20 @@ def build_connector(tables: list[TableDef], settings: Settings) -> dict:
         "snapshot.mode": dbz.snapshot_mode,
         "snapshot.locking.mode": "none",
         "include.schema.changes": "true",
+        # ---- 大消息支持（logs/base64图片等大字段，单条易超默认 1MB）----
+        # producer 请求上限 64MB + lz4 压缩，避免 "Unrecoverable exception from producer send callback"
+        "producer.override.max.request.size": "67108864",
+        "producer.override.compression.type": "lz4",
+        "producer.override.buffer.memory": "134217728",
+        # schema 历史 producer 同样放大
+        "schema.history.internal.producer.max.request.size": "67108864",
+        "schema.history.internal.producer.compression.type": "lz4",
+        # ---- 错误容错：单条坏消息跳过并记日志，不再整个 task 崩掉 ----
+        "errors.tolerance": "all",
+        "errors.log.enable": "true",
+        "errors.log.include.messages": "false",
+        "errors.retry.timeout": "60000",
+        "errors.retry.delay.max.ms": "10000",
         # ---- schema 历史（Debezium 2.x 键名 schema.history.internal.*）----
         "schema.history.internal.kafka.bootstrap.servers": settings.kafka_internal_broker_list,
         "schema.history.internal.kafka.topic": dbz.history_topic,
