@@ -165,10 +165,29 @@ async function refreshAll() {
 }
 
 let timer = null;
-function scheduleRefresh() {
+let monitoring = false;
+
+function startMonitor() {
+  monitoring = true;
+  const b = $('#monitorToggle');
+  b.textContent = '⏸ 停止监控';
+  b.classList.remove('primary'); b.classList.add('warn');
+  $('#monitorState').textContent = '监控中（每 5s 刷新）';
+  refreshAll();
   if (timer) clearInterval(timer);
-  if ($('#autorefresh').checked) timer = setInterval(refreshAll, 5000);
+  timer = setInterval(refreshAll, 5000);
 }
+
+function stopMonitor() {
+  monitoring = false;
+  if (timer) { clearInterval(timer); timer = null; }
+  const b = $('#monitorToggle');
+  b.textContent = '▶ 开始监控';
+  b.classList.add('primary'); b.classList.remove('warn');
+  $('#monitorState').textContent = '监控已停止';
+}
+
+function toggleMonitor() { monitoring ? stopMonitor() : startMonitor(); }
 
 // ================= 配置页 =================
 
@@ -428,7 +447,7 @@ async function deleteSavedQuery(name) {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#refreshBtn').addEventListener('click', refreshAll);
-  $('#autorefresh').addEventListener('change', scheduleRefresh);
+  $('#monitorToggle').addEventListener('click', toggleMonitor);
   document.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => doAction(b.dataset.action, b)));
   document.querySelectorAll('.tab').forEach((t) =>
@@ -448,6 +467,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
-  refreshAll();
-  scheduleRefresh();
+  // 监控默认不自动启动，点「开始监控」才开始
 });

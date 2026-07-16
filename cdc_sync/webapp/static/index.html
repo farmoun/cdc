@@ -10,8 +10,9 @@
   <header>
     <h1>CDC 同步监控 <span class="sub">MySQL → Debezium → Kafka → ClickHouse</span></h1>
     <div class="toolbar">
-      <label class="auto"><input type="checkbox" id="autorefresh" checked> 自动刷新 5s</label>
+      <button id="monitorToggle" class="btn primary">▶ 开始监控</button>
       <button id="refreshBtn" class="btn">立即刷新</button>
+      <span id="monitorState" class="muted">监控已停止</span>
       <span id="lastUpdate" class="muted"></span>
     </div>
   </header>
