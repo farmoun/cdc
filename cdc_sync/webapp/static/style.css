@@ -112,3 +112,7 @@ footer { text-align: center; padding: 20px; }
 .editor:focus { outline: none; border-color: var(--accent); }
 code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 input[type="file"] { color: var(--muted); font-size: 13px; }
+.select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 13px;
+}

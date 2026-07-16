@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import (
@@ -34,6 +34,17 @@ log = logging.getLogger("cdc_sync.webapp")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="CDC 同步监控", version="1.0.0")
+
+
+@app.middleware("http")
+async def _no_cache_static(request: Request, call_next):
+    """静态资源(html/js/css)禁用缓存，避免改了前端浏览器还用旧版。"""
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".js", ".css", ".html")):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 def _settings_path() -> str | None:
@@ -346,6 +357,65 @@ async def api_query(request: Request):
         return _ok(ck_client.run_query(settings.clickhouse, sql))
     except Exception as e:  # noqa: BLE001
         return _err(e)
+
+
+def _export_bytes(columns: list, rows: list, fmt: str):
+    """把查询结果导出为 csv/xlsx/xls 字节流。返回 (data, media_type, ext)。"""
+    import io
+    fmt = (fmt or "csv").lower()
+    if fmt == "csv":
+        import csv
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(columns)
+        w.writerows(rows)
+        return buf.getvalue().encode("utf-8-sig"), "text/csv; charset=utf-8", "csv"  # BOM 让 Excel 正确显示中文
+    if fmt == "xlsx":
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(list(columns))
+        for r in rows:
+            ws.append([v for v in r])
+        bio = io.BytesIO()
+        wb.save(bio)
+        return bio.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+    if fmt == "xls":
+        import xlwt
+        wb = xlwt.Workbook(encoding="utf-8")
+        ws = wb.add_sheet("result")
+        for c, col in enumerate(columns):
+            ws.write(0, c, str(col))
+        for ri, r in enumerate(rows, start=1):
+            for c, v in enumerate(r):
+                ws.write(ri, c, v if isinstance(v, (int, float, str)) else ("" if v is None else str(v)))
+        bio = io.BytesIO()
+        wb.save(bio)
+        return bio.getvalue(), "application/vnd.ms-excel", "xls"
+    raise ValueError(f"不支持的导出格式：{fmt}（支持 csv/xlsx/xls）")
+
+
+@app.post("/api/query/export")
+async def api_query_export(request: Request):
+    """执行 SQL 并导出结果为 csv/xlsx/xls 文件。"""
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"请求体非法 JSON：{e}"}, status_code=400)
+    sql = (body.get("sql") or "").strip()
+    fmt = (body.get("format") or "csv").lower()
+    if not sql:
+        return JSONResponse({"ok": False, "error": "查询语句为空"}, status_code=400)
+    try:
+        settings = config.load_settings(_settings_path())
+        res = ck_client.run_query(settings.clickhouse, sql, max_rows=100000)  # 导出放宽行数上限
+        data, media, ext = _export_bytes(res["columns"], res["rows"], fmt)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    return Response(
+        content=data, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="query_export.{ext}"'},
+    )
 
 
 @app.get("/api/queries")

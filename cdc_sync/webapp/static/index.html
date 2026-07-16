@@ -79,6 +79,12 @@
         placeholder="输入 SQL，例如：SELECT * FROM yibuapi.checkins FINAL LIMIT 20"></textarea>
       <div class="actions" style="margin-top:10px">
         <button id="runQuery" class="btn primary">执行 (Ctrl+Enter)</button>
+        <select id="exportFormat" class="select">
+          <option value="csv">CSV</option>
+          <option value="xlsx">XLSX</option>
+          <option value="xls">XLS</option>
+        </select>
+        <button id="exportQuery" class="btn">导出</button>
         <input id="queryName" type="text" placeholder="给这条查询起个名字" style="min-width:200px">
         <button id="saveQuery" class="btn">保存查询</button>
         <span id="queryMsg" class="action-msg"></span>

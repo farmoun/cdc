@@ -378,6 +378,35 @@ function switchTabToQueryInput() {
   $('#queryInput').scrollIntoView({ behavior: 'smooth' });
 }
 
+async function exportQuery() {
+  const msg = $('#queryMsg');
+  const sql = $('#queryInput').value.trim();
+  const fmt = $('#exportFormat').value;
+  if (!sql) { msg.textContent = '请输入查询语句'; msg.className = 'action-msg err'; return; }
+  msg.textContent = '导出中…'; msg.className = 'action-msg';
+  try {
+    const resp = await fetch('/api/query/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql, format: fmt }),
+    });
+    const ct = resp.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {          // 出错返回 JSON
+      const j = await resp.json();
+      msg.textContent = '✗ ' + (j.error || '导出失败'); msg.className = 'action-msg err';
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'query_export.' + fmt;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    msg.textContent = `✓ 已导出 ${fmt.toUpperCase()}`; msg.className = 'action-msg ok';
+  } catch (e) {
+    msg.textContent = '✗ ' + e; msg.className = 'action-msg err';
+  }
+}
+
 async function saveQuery() {
   const msg = $('#queryMsg');
   const name = $('#queryName').value.trim();
@@ -412,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#importSql').addEventListener('click', importSql);
   // 查询页
   $('#runQuery').addEventListener('click', runQuery);
+  $('#exportQuery').addEventListener('click', exportQuery);
   $('#saveQuery').addEventListener('click', saveQuery);
   $('#queryInput').addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
