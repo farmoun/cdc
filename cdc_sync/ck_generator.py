@@ -105,7 +105,7 @@ def _kafka_settings_block(table: TableDef, settings: Settings, ck_major: int | N
     }
     lines = [f"    {k} = '{v}'" for k, v in quoted.items()]
     lines.append("    kafka_skip_broken_messages = 1")
-    lines.append("    kafka_max_block_size = 8192")
+    lines.append("    kafka_max_block_size = 65536")   # 大批量落盘，提升消费吞吐
     return ",\n".join(lines)
 
 

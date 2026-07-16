@@ -39,6 +39,21 @@ def build_connector(tables: list[TableDef], settings: Settings) -> dict:
         "snapshot.mode": dbz.snapshot_mode,
         "snapshot.locking.mode": "none",
         "include.schema.changes": "true",
+        # ---- 增量快照（分块、可断点续传）：大表崩了/重启从上次的块继续，不再从头 ----
+        # read.only=true → MySQL 基于 GTID 水位的只读增量快照（无需在源库建信号表）
+        "read.only": "true",
+        "signal.enabled.channels": "kafka",
+        "signal.kafka.topic": "cdc-signals",
+        "signal.kafka.bootstrap.servers": settings.kafka_internal_broker_list,
+        "incremental.snapshot.chunk.size": "32768",
+        # ---- 吞吐调优（提升快照/流式速度）----
+        "snapshot.fetch.size": "50000",          # 快照每次从 MySQL 拉的行数
+        "snapshot.max.threads": "4",             # 多表并行快照
+        "max.batch.size": "16384",               # Debezium 单批事件数
+        "max.queue.size": "65536",               # 内部队列
+        "producer.override.batch.size": "524288",   # Kafka 生产者批大小 512KB
+        "producer.override.linger.ms": "50",        # 攒批 50ms，提高吞吐
+        "producer.override.acks": "1",              # 快照场景用 acks=1 提速（可重跑，容忍极端情况丢批）
         # ---- 大消息支持（logs/base64图片等大字段，单条易超默认 1MB）----
         # producer 请求上限 64MB + lz4 压缩，避免 "Unrecoverable exception from producer send callback"
         "producer.override.max.request.size": "67108864",

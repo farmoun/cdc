@@ -104,6 +104,46 @@ def cmd_render_config(args) -> int:
     return 0
 
 
+def _send_snapshot_signal(settings, tables_cfg, only=None) -> int:
+    """向 Kafka 信号 topic 发增量快照信号，回填历史数据（分块、可断点续传）。返回表数。"""
+    import json
+    from kafka import KafkaProducer
+
+    dcs = [f"{t.source_database}.{t.source_table}" for t in tables_cfg.tables]
+    if only:
+        want = set(only.split(","))
+        dcs = [d for d in dcs if d in want or d.split(".", 1)[1] in want]
+    if not dcs:
+        raise ValueError("没有匹配的表")
+
+    signal = {"type": "execute-snapshot",
+              "data": {"type": "incremental", "data-collections": dcs}}
+    brokers = [b.strip() for b in settings.kafka_internal_broker_list.split(",") if b.strip()]
+    producer = KafkaProducer(bootstrap_servers=brokers, retries=3, request_timeout_ms=15000)
+    try:
+        # key 必须等于连接器的 topic.prefix（本项目固定 "mysql"）
+        fut = producer.send("cdc-signals", key=b"mysql", value=json.dumps(signal).encode())
+        fut.get(timeout=15)
+        producer.flush()
+    finally:
+        producer.close()
+    return len(dcs)
+
+
+def cmd_snapshot(args) -> int:
+    """触发增量快照：回填历史数据（分块、可断点续传，重启从上次块继续）。"""
+    settings, tables_cfg = _load(args)
+    _ensure_columns(settings, tables_cfg, allow_introspect=False)
+    try:
+        n = _send_snapshot_signal(settings, tables_cfg, only=args.only)
+        log.info("✓ 已发送增量快照信号，回填 %d 张表（分块进行，可断点续传）", n)
+        log.info("  进度可在监控面板/日志观察；中途重启会从上次的块继续，不会从头。")
+        return 0
+    except Exception as e:  # noqa: BLE001
+        log.error("发送增量快照信号失败：%s", e)
+        return 1
+
+
 def cmd_reset_ck(args) -> int:
     """用 App 自己的配置(settings.yaml，密码正确)清空并重建 CK 目标库。"""
     settings, _ = _load(args)
@@ -158,6 +198,16 @@ def cmd_bootstrap(args) -> int:
     connector = connector_generator.build_connector(tables_cfg.tables, settings)
     resp = connect_client.deploy(settings.connect_url, connector)
     log.info("  ✓ 连接器已发布：%s", resp.get("name", connector["name"]))
+
+    # 4) schema_only 模式：连接器只从当前位点增量，需触发增量快照回填历史数据
+    if settings.debezium.snapshot_mode == "schema_only" and not args.no_snapshot:
+        log.info("④ 等连接器 RUNNING 后触发增量快照（回填历史，分块可续传）...")
+        time.sleep(12)  # 等连接器 task + 信号消费者就绪，避免信号被漏读
+        try:
+            n = _send_snapshot_signal(settings, tables_cfg)
+            log.info("  ✓ 已触发 %d 张表的增量快照", n)
+        except Exception as e:  # noqa: BLE001
+            log.warning("  触发增量快照失败（可稍后手动 snapshot）：%s", e)
 
     log.info("✔ 初始化完成，数据开始同步。打开监控面板查看状态。")
     return 0
@@ -341,10 +391,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("bootstrap", help="一键初始化：等Connect→建CK表→发布连接器")
     sp.add_argument("--wait", type=int, default=180, help="等待 Connect 就绪的秒数（默认 180）")
     sp.add_argument("--introspect", action="store_true", help="缺列时自动连 MySQL 内省")
+    sp.add_argument("--no-snapshot", action="store_true", help="不自动触发增量快照（schema_only 模式下）")
     sp.set_defaults(func=cmd_bootstrap)
 
     sp = sub.add_parser("reset-ck", help="清空并重建 CK 目标库（用 App 配置的正确密码）")
     sp.set_defaults(func=cmd_reset_ck)
+
+    sp = sub.add_parser("snapshot", help="触发增量快照回填历史数据（分块、可断点续传）")
+    sp.add_argument("--only", default=None, help="仅快照这些表（逗号分隔，表名或 db.表名）")
+    sp.set_defaults(func=cmd_snapshot)
 
     return p
 
