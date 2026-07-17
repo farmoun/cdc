@@ -1,4 +1,4 @@
-# CDC 同步工具层（cdc_sync）
+# CDC同步MySQL至ClickHouse从库
 
 MySQL → Debezium → Kafka → ClickHouse 实时 CDC 同步的**配置驱动自动化工具**。
 把「每接一张表要手写 CK 三对象建表 SQL + Debezium 连接器 JSON」的重复劳动，收敛为
