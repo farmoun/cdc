@@ -139,9 +139,8 @@ async function doAction(action, btn) {
   btn.disabled = true;
   try {
     let res;
-    if (action === 'deploy') res = await postJSON('/api/connectors/deploy');
+    if (action === 'deploy-idle') res = await postJSON('/api/pipeline/deploy');
     else if (action === 'restart') res = await postJSON('/api/connectors/restart');
-    else if (action === 'apply') res = await postJSON('/api/clickhouse/apply');
     else if (action === 'reconcile') { await loadReconcile(true); msg.textContent = '对账完成'; msg.className = 'action-msg ok'; btn.disabled = false; return; }
     if (res.ok) { msg.textContent = '✓ 成功：' + JSON.stringify(res.data); msg.className = 'action-msg ok'; }
     else { msg.textContent = '✗ ' + res.error; msg.className = 'action-msg err'; }
@@ -165,40 +164,48 @@ async function refreshAll() {
 }
 
 let timer = null;
-let monitoring = false;
+let syncing = false;
+let busy = false;
 
-// 应用监控开/关（更新UI+定时器）。persist=true 时同步到后端。
-function applyMonitoring(on) {
-  monitoring = on;
-  const b = $('#monitorToggle');
+// 更新按钮/状态显示 + 轮询定时器（不触发后端）
+function applyState(on) {
+  syncing = on;
+  const b = $('#pipelineToggle');
   if (on) {
-    b.textContent = '⏸ 停止监控';
+    b.textContent = '⏸ 停止同步';
     b.classList.remove('primary'); b.classList.add('warn');
-    $('#monitorState').textContent = '监控中（每 5s 刷新）';
-    refreshAll();
+    $('#pipelineState').textContent = '同步进行中（每 5s 刷新）';
     if (timer) clearInterval(timer);
     timer = setInterval(refreshAll, 5000);
   } else {
     if (timer) { clearInterval(timer); timer = null; }
-    b.textContent = '▶ 开始监控';
+    b.textContent = '▶ 开启同步';
     b.classList.add('primary'); b.classList.remove('warn');
-    $('#monitorState').textContent = '监控已停止';
+    $('#pipelineState').textContent = '同步已停止';
   }
 }
 
-async function persistMonitoring(on) {
+// 点击主开关：真正开启/停止同步（调后端管道）
+async function togglePipeline() {
+  if (busy) return;
+  const wantStart = !syncing;
+  if (wantStart && !confirm('开启同步？将挂上 CK 消费并恢复连接器，开始抓取数据。')) return;
+  if (!wantStart && !confirm('停止同步？将暂停连接器并摘除 CK 消费。')) return;
+  busy = true;
+  const b = $('#pipelineToggle'); b.disabled = true;
+  $('#pipelineState').textContent = wantStart ? '正在开启…' : '正在停止…';
   try {
-    await fetch('/api/ui-state', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ monitoring: on }),
-    });
-  } catch (e) { /* 后端不可用时不阻塞前端 */ }
-}
-
-function toggleMonitor() {
-  const on = !monitoring;
-  applyMonitoring(on);
-  persistMonitoring(on);            // 状态存后端，换浏览器/刷新都保持
+    const r = await postJSON(wantStart ? '/api/pipeline/start' : '/api/pipeline/stop');
+    if (r.ok) {
+      applyState(wantStart);
+      if (wantStart) refreshAll();
+    } else {
+      $('#pipelineState').textContent = '✗ ' + r.error;
+    }
+  } catch (e) {
+    $('#pipelineState').textContent = '✗ ' + e;
+  }
+  b.disabled = false; busy = false;
 }
 
 // ================= 配置页 =================
@@ -459,7 +466,7 @@ async function deleteSavedQuery(name) {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#refreshBtn').addEventListener('click', refreshAll);
-  $('#monitorToggle').addEventListener('click', toggleMonitor);
+  $('#pipelineToggle').addEventListener('click', togglePipeline);
   document.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => doAction(b.dataset.action, b)));
   document.querySelectorAll('.tab').forEach((t) =>
@@ -479,10 +486,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
-  // 无论开关状态，先拉一次当前状态显示（停止=静态快照，可手动刷新）
+  // 无论开/停，先拉一次当前状态显示快照
   refreshAll();
-  // 再从后端恢复"自动刷新"开关状态
-  getJSON('/api/ui-state').then((r) => {
-    if (r.ok && r.data && r.data.monitoring) applyMonitoring(true);
+  // 从后端读同步开关状态并恢复（换浏览器/刷新一致）；running 才自动轮询
+  getJSON('/api/pipeline').then((r) => {
+    if (r.ok && r.data && r.data.desired === 'running') applyState(true);
   }).catch(() => {});
 });

@@ -163,16 +163,20 @@ def cmd_reset_ck(args) -> int:
 
 
 def cmd_bootstrap(args) -> int:
-    """一键初始化：等 Connect 就绪 → 建 CK 三对象 → 发布连接器（幂等，可重复跑）。"""
+    """一键部署：等 Connect 就绪 → 建 CK 三对象 → 注册连接器。
+
+    默认部署为**停止态**（连接器暂停、CK 消费摘除），需在面板点「开启同步」才执行。
+    加 --start 则部署完立即开启同步。
+    """
     import time
+    from . import pipeline
 
     settings, tables_cfg = _load(args)
     _ensure_columns(settings, tables_cfg, allow_introspect=args.introspect)
 
     # 1) 等待 Kafka Connect REST 就绪
     log.info("① 等待 Kafka Connect 就绪（%s，最多 %ds）...", settings.connect_url, args.wait)
-    deadline = args.wait
-    waited = 0
+    deadline, waited = args.wait, 0
     while waited < deadline:
         if connect_client.ping(settings.connect_url):
             log.info("  ✓ Connect 就绪")
@@ -183,34 +187,50 @@ def cmd_bootstrap(args) -> int:
         log.error("Connect 在 %ds 内未就绪，放弃。可稍后重跑 bootstrap。", deadline)
         return 1
 
-    # 2) 建 CK 三对象（IF NOT EXISTS，幂等）
-    log.info("② 建 ClickHouse 三对象（%d 张表）...", len(tables_cfg.tables))
+    # 2) 完整部署但停止态：建表 + 摘消费 + 注册连接器 + 暂停
+    log.info("② 部署 CK 三对象 + 注册连接器（停止态）...")
     ck_major = _detect_ck_major(settings)
-    made = 0
-    for t in tables_cfg.tables:
-        tsql = ck_generator.build_table_sql(t, settings, ck_major=ck_major)
-        ck_client.execute_statements(settings.clickhouse, tsql.ordered(), dry_run=False)
-        made += 1
-    log.info("  ✓ 已处理 %d 张表", made)
+    pipeline.deploy_idle(settings, tables_cfg, ck_major=ck_major)
+    log.info("  ✓ 已部署 %d 张表，连接器已注册并暂停", len(tables_cfg.tables))
 
-    # 3) 发布连接器（无则建、有则更新，幂等）
-    log.info("③ 发布 Debezium 连接器 %s ...", settings.debezium.connector_name)
-    connector = connector_generator.build_connector(tables_cfg.tables, settings)
-    resp = connect_client.deploy(settings.connect_url, connector)
-    log.info("  ✓ 连接器已发布：%s", resp.get("name", connector["name"]))
-
-    # 4) schema_only 模式：连接器只从当前位点增量，需触发增量快照回填历史数据
-    if settings.debezium.snapshot_mode == "schema_only" and not args.no_snapshot:
-        log.info("④ 等连接器 RUNNING 后触发增量快照（回填历史，分块可续传）...")
-        time.sleep(12)  # 等连接器 task + 信号消费者就绪，避免信号被漏读
-        try:
-            n = _send_snapshot_signal(settings, tables_cfg)
-            log.info("  ✓ 已触发 %d 张表的增量快照", n)
-        except Exception as e:  # noqa: BLE001
-            log.warning("  触发增量快照失败（可稍后手动 snapshot）：%s", e)
-
-    log.info("✔ 初始化完成，数据开始同步。打开监控面板查看状态。")
+    # 3) 可选：部署后立即开启
+    if args.start:
+        log.info("③ 开启同步...")
+        pipeline.start(settings, tables_cfg)
+        log.info("✔ 部署完成，同步已开启。")
+    else:
+        log.info("✔ 部署完成（停止态）。到面板点「开启同步」开始，或用 `python main.py start`。")
     return 0
+
+
+def cmd_start(args) -> int:
+    """开启同步（恢复连接器 + 挂 CK 消费 + 触发快照）。"""
+    from . import pipeline
+    settings, tables_cfg = _load(args)
+    _ensure_columns(settings, tables_cfg, allow_introspect=False)
+    try:
+        r = pipeline.start(settings, tables_cfg, do_snapshot=not args.no_snapshot)
+        log.info("✓ 同步已开启：连接器 %s%s", r["connector"],
+                 f"，已触发 {r['snapshot_tables']} 表增量快照" if r.get("snapshot_tables") else "")
+        return 0
+    except Exception as e:  # noqa: BLE001
+        log.error("开启同步失败：%s", e)
+        return 1
+
+
+def cmd_stop(args) -> int:
+    """停止同步（暂停连接器 + 摘除 CK 消费）。"""
+    from . import pipeline
+    settings, tables_cfg = _load(args)
+    _ensure_columns(settings, tables_cfg, allow_introspect=False)
+    try:
+        r = pipeline.stop(settings, tables_cfg)
+        log.info("✓ 同步已停止：连接器暂停=%s，摘除 %d 个消费视图", r["connector_paused"], r["detached"])
+        return 0
+    except Exception as e:  # noqa: BLE001
+        log.error("停止同步失败：%s", e)
+        return 1
+
 
 
 def cmd_introspect(args) -> int:
@@ -388,11 +408,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--force", action="store_true", help="已存在也覆盖")
     sp.set_defaults(func=cmd_render_config)
 
-    sp = sub.add_parser("bootstrap", help="一键初始化：等Connect→建CK表→发布连接器")
+    sp = sub.add_parser("bootstrap", help="完整部署(建CK表+注册连接器)，默认停止态")
     sp.add_argument("--wait", type=int, default=180, help="等待 Connect 就绪的秒数（默认 180）")
     sp.add_argument("--introspect", action="store_true", help="缺列时自动连 MySQL 内省")
-    sp.add_argument("--no-snapshot", action="store_true", help="不自动触发增量快照（schema_only 模式下）")
+    sp.add_argument("--start", action="store_true", help="部署后立即开启同步（默认停止态）")
     sp.set_defaults(func=cmd_bootstrap)
+
+    sp = sub.add_parser("start", help="开启同步（恢复连接器+挂CK消费+触发快照）")
+    sp.add_argument("--no-snapshot", action="store_true", help="不自动触发增量快照")
+    sp.set_defaults(func=cmd_start)
+
+    sp = sub.add_parser("stop", help="停止同步（暂停连接器+摘除CK消费）")
+    sp.set_defaults(func=cmd_stop)
 
     sp = sub.add_parser("reset-ck", help="清空并重建 CK 目标库（用 App 配置的正确密码）")
     sp.set_defaults(func=cmd_reset_ck)

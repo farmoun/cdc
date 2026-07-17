@@ -238,6 +238,75 @@ def api_reconcile_run():
     return api_reconcile()
 
 
+# ----------------------------- 同步管道主开关 -----------------------------
+
+@app.post("/api/pipeline/start")
+def api_pipeline_start():
+    """开启同步：挂 CK 消费 + 恢复/发布连接器 + (schema_only 触发增量快照)。"""
+    from .. import pipeline
+    try:
+        settings, tables = _load()
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+    try:
+        for t in tables.tables:
+            if not t.has_columns():
+                return _err(f"表 {t.source_table} 无列定义，请先在配置页导入表结构")
+        r = pipeline.start(settings, tables)
+        return _ok(r)
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.post("/api/pipeline/stop")
+def api_pipeline_stop():
+    """停止同步：暂停连接器 + 摘除 CK 消费。"""
+    from .. import pipeline
+    try:
+        settings, tables = _load()
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+    try:
+        return _ok(pipeline.stop(settings, tables))
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.post("/api/pipeline/deploy")
+def api_pipeline_deploy():
+    """完整部署但停止态：建表 + 摘消费 + 注册连接器 + 暂停。"""
+    from .. import pipeline
+    try:
+        settings, tables = _load()
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+    try:
+        for t in tables.tables:
+            if not t.has_columns():
+                return _err(f"表 {t.source_table} 无列定义，请先在配置页导入表结构")
+        try:
+            _, ck_major = ck_client.server_version(settings.clickhouse)
+        except Exception:  # noqa: BLE001
+            ck_major = None
+        pipeline.deploy_idle(settings, tables, ck_major=ck_major)
+        return _ok({"deployed": len(tables.tables), "state": "stopped"})
+    except Exception as e:  # noqa: BLE001
+        return _err(e)
+
+
+@app.get("/api/pipeline")
+def api_pipeline_state():
+    """返回管道期望状态(ui_state) + 连接器实时状态。"""
+    st = {"desired": ui_state.load_state().get("pipeline", "stopped")}
+    try:
+        settings, _ = _load()
+        st["connector"] = connect_client.connector_state(settings.connect_url, settings.debezium.connector_name)
+    except Exception as e:  # noqa: BLE001
+        st["connector"] = None
+        st["error"] = str(e)
+    return _ok(st)
+
+
 # ----------------------------- 配置读写端点 -----------------------------
 
 @app.get("/api/config/settings")

@@ -10,9 +10,9 @@
   <header>
     <h1>CDC 同步监控 <span class="sub">MySQL → Debezium → Kafka → ClickHouse</span></h1>
     <div class="toolbar">
-      <button id="monitorToggle" class="btn primary">▶ 开始监控</button>
+      <button id="pipelineToggle" class="btn primary">▶ 开启同步</button>
       <button id="refreshBtn" class="btn">立即刷新</button>
-      <span id="monitorState" class="muted">监控已停止</span>
+      <span id="pipelineState" class="muted">同步已停止</span>
       <span id="lastUpdate" class="muted"></span>
     </div>
   </header>
@@ -37,12 +37,12 @@
   <section class="panel">
     <h2>操作</h2>
     <div class="actions">
-      <button class="btn primary" data-action="deploy">发布/更新连接器</button>
+      <button class="btn" data-action="deploy-idle">完整部署(建表+注册连接器，停止态)</button>
       <button class="btn warn" data-action="restart">重启连接器</button>
-      <button class="btn" data-action="apply">建 CK 表(三对象)</button>
       <button class="btn" data-action="reconcile">运行对账</button>
       <span id="actionMsg" class="action-msg"></span>
     </div>
+    <p class="muted">同步的开启/停止由右上角「开启同步」按钮严格控制。部署仅建好表与连接器，不会自动开始。</p>
   </section>
 
   <div class="grid">

@@ -49,6 +49,30 @@ def execute_statements(conf: ClickHouseConf, statements: list[tuple[str, str]], 
         client.close()
 
 
+def set_consumption(conf: ClickHouseConf, database: str, mv_names: list[str], *, enabled: bool) -> dict:
+    """启/停 CK 对 Kafka 的消费：DETACH/ATTACH 物化视图（MV 是消费驱动，摘掉即停消费）。
+
+    每张表 best-effort，单张失败不影响其它。返回 {ok:[...], skipped:[...]}。
+    """
+    client = _client(conf)
+    ok, skipped = [], []
+    try:
+        for mv in mv_names:
+            try:
+                if enabled:
+                    client.command(f"ATTACH TABLE {database}.{mv}")
+                else:
+                    client.command(f"DETACH TABLE IF EXISTS {database}.{mv}")
+                ok.append(mv)
+            except Exception as e:  # noqa: BLE001
+                # ATTACH 一个未 detach 的表会报错→视为已就绪；DETACH 不存在→忽略
+                skipped.append(mv)
+                log.debug("%s %s 跳过：%s", "ATTACH" if enabled else "DETACH", mv, e)
+    finally:
+        client.close()
+    return {"ok": ok, "skipped": skipped}
+
+
 def _split_sql(sql: str) -> list[str]:
     """按分号切分多语句，过滤纯注释/空行。"""
     parts = []

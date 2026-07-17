@@ -91,3 +91,32 @@ def restart(connect_url: str, name: str) -> None:
         raise ConnectError(f"重启连接器失败 — {e}") from e
     if r.status_code not in (200, 202, 204):
         raise ConnectError(f"重启失败 HTTP {r.status_code}: {r.text}")
+
+
+def pause(connect_url: str, name: str) -> None:
+    """PUT /connectors/{name}/pause —— 暂停连接器（停止读 binlog，不再产数据）。"""
+    try:
+        r = requests.put(f"{_base(connect_url)}/connectors/{name}/pause", timeout=_TIMEOUT)
+    except requests.RequestException as e:
+        raise ConnectError(f"暂停连接器失败 — {e}") from e
+    if r.status_code not in (202, 204, 200):
+        raise ConnectError(f"暂停失败 HTTP {r.status_code}: {r.text}")
+
+
+def resume(connect_url: str, name: str) -> None:
+    """PUT /connectors/{name}/resume —— 恢复连接器（继续同步）。"""
+    try:
+        r = requests.put(f"{_base(connect_url)}/connectors/{name}/resume", timeout=_TIMEOUT)
+    except requests.RequestException as e:
+        raise ConnectError(f"恢复连接器失败 — {e}") from e
+    if r.status_code not in (202, 204, 200):
+        raise ConnectError(f"恢复失败 HTTP {r.status_code}: {r.text}")
+
+
+def connector_state(connect_url: str, name: str) -> str | None:
+    """返回连接器状态字符串（RUNNING/PAUSED/FAILED…）；不存在返回 None。"""
+    try:
+        st = status(connect_url, name)
+        return st.get("connector", {}).get("state")
+    except ConnectError:
+        return None

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import config
 
-_DEFAULT = {"monitoring": False}
+_DEFAULT = {"monitoring": False, "pipeline": "stopped"}
 
 
 def _path() -> Path:
