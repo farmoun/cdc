@@ -49,9 +49,14 @@ def read_settings_dict() -> dict:
         return _EMPTY_SETTINGS
     if not isinstance(raw, dict):
         return _EMPTY_SETTINGS
-    # 与空模板做浅合并，保证前端拿到所有分组键
-    merged = {k: {**v, **(raw.get(k) or {})} if isinstance(v, dict) else raw.get(k, v)
-              for k, v in _EMPTY_SETTINGS.items()}
+    # 与空模板做浅合并，保证前端拿到所有分组键（兼容非法值如 null/数组/字符串）
+    merged = {}
+    for k, v in _EMPTY_SETTINGS.items():
+        if isinstance(v, dict):
+            src = raw.get(k)
+            merged[k] = {**v, **(src if isinstance(src, dict) else {})}
+        else:
+            merged[k] = raw.get(k, v)
     return merged
 
 
@@ -103,7 +108,7 @@ def seed_settings_from(env_template: Path | str, *, force: bool = False) -> tupl
         "clickhouse": {"host": s.clickhouse.host, "port": s.clickhouse.port, "user": s.clickhouse.user,
                        "password": s.clickhouse.password, "database": s.clickhouse.database, "secure": s.clickhouse.secure},
         "kafka": {"broker_list": s.kafka_broker_list, "internal_broker_list": s.kafka_internal_broker_list},
-        "schema_registry": {"url": s.schema_registry_url},
+        "schema_registry": {"url": s.schema_registry_url, "url_for_ck": s.schema_registry_url_for_ck},
         "connect": {"url": s.connect_url},
         "debezium": {"connector_name": s.debezium.connector_name, "server_name": s.debezium.server_name,
                      "server_id": s.debezium.server_id, "tasks_max": s.debezium.tasks_max,
