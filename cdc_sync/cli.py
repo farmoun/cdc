@@ -124,9 +124,12 @@ def cmd_reset_ck(args) -> int:
     settings, _ = _load(args)
     db = settings.clickhouse.database
     try:
+        # 先连 system 库建目标库（CK 26.x 连不存在的库直接 code 81 拒绝）
+        from .pipeline import _ensure_database
+        _ensure_database(settings, db)
+        # 建好后再连目标库 DROP 清空
         client = ck_client._client(settings.clickhouse)
         try:
-            # CK 26.x: DROP IF EXISTS 对不存在的库抛异常(code 81) → 忽略，只管建库
             try:
                 client.command(f"DROP DATABASE IF EXISTS {db}")
             except Exception:  # noqa: BLE001
