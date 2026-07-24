@@ -72,10 +72,10 @@ def start(settings, tables_cfg, *, do_snapshot: bool = True) -> dict:
         connect_client.deploy(settings.connect_url, connector)
     else:
         connect_client.resume(settings.connect_url, name)
-    # 3) schema_only：触发增量快照回填历史
+    # 3) 增量快照回填历史数据（分块、可断点续传，崩了从上次块继续不再从头）
     snap = None
-    if do_snapshot and settings.debezium.snapshot_mode == "schema_only":
-        time.sleep(8)
+    if do_snapshot:
+        time.sleep(12)  # 等连接器 task + 信号消费者就绪
         try:
             snap = send_snapshot(settings, tables_cfg)
         except Exception as e:  # noqa: BLE001
