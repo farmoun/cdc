@@ -39,9 +39,7 @@ def build_connector(tables: list[TableDef], settings: Settings) -> dict:
         "snapshot.mode": dbz.snapshot_mode,
         "snapshot.locking.mode": "none",
         "include.schema.changes": "true",
-        # ---- 增量快照（分块、可断点续传）：大表崩了/重启从上次的块继续，不再从头 ----
-        # read.only=true → MySQL 基于 GTID 水位的只读增量快照（无需在源库建信号表）
-        "read.only": "true",
+        # ---- 增量快照（分块、可断点续传）----
         "signal.enabled.channels": "kafka",
         "signal.kafka.topic": "cdc-signals",
         "signal.kafka.bootstrap.servers": settings.kafka_internal_broker_list,
