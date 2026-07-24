@@ -700,10 +700,6 @@ tables:
     mysql_type: bigint
     nullable: true
     is_pk: false
-  - name: description_en
-    mysql_type: text
-    nullable: true
-    is_pk: false
 - source_database: yibuapi
   source_table: options
   target_table: options
@@ -1866,10 +1862,6 @@ tables:
     is_pk: false
   - name: parent_id
     mysql_type: bigint
-    nullable: true
-    is_pk: false
-  - name: google_id
-    mysql_type: varchar(191)
     nullable: true
     is_pk: false
   - name: created_at
