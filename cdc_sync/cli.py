@@ -126,8 +126,12 @@ def cmd_reset_ck(args) -> int:
     try:
         client = ck_client._client(settings.clickhouse)
         try:
-            client.command(f"DROP DATABASE IF EXISTS {db}")
-            client.command(f"CREATE DATABASE {db}")
+            # CK 26.x: DROP IF EXISTS 对不存在的库抛异常(code 81) → 忽略，只管建库
+            try:
+                client.command(f"DROP DATABASE IF EXISTS {db}")
+            except Exception:  # noqa: BLE001
+                pass
+            client.command(f"CREATE DATABASE IF NOT EXISTS {db}")
         finally:
             client.close()
         log.info("✓ ClickHouse 库 %s 已清空重建", db)
