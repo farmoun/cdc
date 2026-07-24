@@ -20,10 +20,28 @@ def _mv_names(tables_cfg) -> tuple[str, list[str]]:
     return db, [t.mv_name for t in tables_cfg.tables]
 
 
+def _ensure_database(settings, db: str) -> None:
+    """确保 CK 目标库存在（CK 26.x 连不存在的库直接抛 code 81）。"""
+    try:
+        client = ck_client._client(settings.clickhouse)
+    except Exception:  # noqa: BLE001
+        # 可能库不存在导致连接失败 → 临时用 system 库连，先建库
+        import copy
+        conf = copy.deepcopy(settings.clickhouse)
+        conf.database = "system"
+        client = ck_client._client(conf)
+    try:
+        client.command(f"CREATE DATABASE IF NOT EXISTS {db}")
+    finally:
+        client.close()
+
+
 def deploy_idle(settings, tables_cfg, *, ck_major=None) -> None:
     """完整部署但保持停止态：建表 → 摘除消费 → 注册连接器 → 暂停。"""
     db, mvs = _mv_names(tables_cfg)
-    # 0) 先 attach 可能已 detach 的 MV，避免重复部署时 CREATE IF NOT EXISTS 与 detached 冲突
+    # 0) 确保目标库存在（CK 26.x 连不存在的库会直接报错）
+    _ensure_database(settings, db)
+    # 1) 先 attach 可能已 detach 的 MV，避免重复部署时 CREATE IF NOT EXISTS 与 detached 冲突
     ck_client.set_consumption(settings.clickhouse, db, mvs, enabled=True)
     # 1) 建 CK 三对象
     for t in tables_cfg.tables:

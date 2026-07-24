@@ -153,6 +153,10 @@ def cmd_bootstrap(args) -> int:
     settings, tables_cfg = _load(args)
     _ensure_columns(settings, tables_cfg, allow_introspect=args.introspect)
 
+    # 0) 确保 CK 目标库存在（否则后续建表/版本检测全挂）
+    db = tables_cfg.tables[0].target_database if tables_cfg.tables else "default"
+    pipeline._ensure_database(settings, db)
+
     # 1) 等待 Kafka Connect REST 就绪
     log.info("① 等待 Kafka Connect 就绪（%s，最多 %ds）...", settings.connect_url, args.wait)
     deadline, waited = args.wait, 0
