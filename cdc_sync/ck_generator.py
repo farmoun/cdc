@@ -106,6 +106,8 @@ def _kafka_settings_block(table: TableDef, settings: Settings, ck_major: int | N
     lines = [f"    {k} = '{v}'" for k, v in quoted.items()]
     lines.append("    kafka_skip_broken_messages = 1")
     lines.append("    kafka_max_block_size = 65536")   # 大批量落盘，提升消费吞吐
+    # 消费稳定性：单消费者(MV)就够(tasks.max=1→1分区)，poll batch 对齐 max_block_size
+    lines.append("    kafka_poll_max_batch_size = 65536")
     return ",\n".join(lines)
 
 

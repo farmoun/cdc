@@ -59,7 +59,7 @@ def start(settings, tables_cfg, *, do_snapshot: bool = True) -> dict:
     if do_snapshot and settings.debezium.snapshot_mode == "schema_only":
         time.sleep(8)
         try:
-            snap = _send_snapshot(settings, tables_cfg)
+            snap = send_snapshot(settings, tables_cfg)
         except Exception as e:  # noqa: BLE001
             log.warning("触发增量快照失败（可稍后手动 snapshot）：%s", e)
     ui_state.save_state({"pipeline": "running"})
@@ -82,7 +82,7 @@ def stop(settings, tables_cfg) -> dict:
     return {"connector_paused": paused, "detached": len(res["ok"])}
 
 
-def _send_snapshot(settings, tables_cfg, only=None) -> int:
+def send_snapshot(settings, tables_cfg, only=None) -> int:
     """向 Kafka 信号 topic 发增量快照信号，回填历史（分块可续传）。返回表数。"""
     import json
     from kafka import KafkaProducer

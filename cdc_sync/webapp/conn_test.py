@@ -11,7 +11,6 @@ import socket
 import requests
 
 from ..config import Settings
-from .kafka_lag import kafka_reachable
 
 _HTTP_TIMEOUT = 6
 

@@ -104,38 +104,13 @@ def cmd_render_config(args) -> int:
     return 0
 
 
-def _send_snapshot_signal(settings, tables_cfg, only=None) -> int:
-    """向 Kafka 信号 topic 发增量快照信号，回填历史数据（分块、可断点续传）。返回表数。"""
-    import json
-    from kafka import KafkaProducer
-
-    dcs = [f"{t.source_database}.{t.source_table}" for t in tables_cfg.tables]
-    if only:
-        want = set(only.split(","))
-        dcs = [d for d in dcs if d in want or d.split(".", 1)[1] in want]
-    if not dcs:
-        raise ValueError("没有匹配的表")
-
-    signal = {"type": "execute-snapshot",
-              "data": {"type": "incremental", "data-collections": dcs}}
-    brokers = [b.strip() for b in settings.kafka_internal_broker_list.split(",") if b.strip()]
-    producer = KafkaProducer(bootstrap_servers=brokers, retries=3, request_timeout_ms=15000)
-    try:
-        # key 必须等于连接器的 topic.prefix（本项目固定 "mysql"）
-        fut = producer.send("cdc-signals", key=b"mysql", value=json.dumps(signal).encode())
-        fut.get(timeout=15)
-        producer.flush()
-    finally:
-        producer.close()
-    return len(dcs)
-
-
 def cmd_snapshot(args) -> int:
     """触发增量快照：回填历史数据（分块、可断点续传，重启从上次块继续）。"""
+    from . import pipeline
     settings, tables_cfg = _load(args)
     _ensure_columns(settings, tables_cfg, allow_introspect=False)
     try:
-        n = _send_snapshot_signal(settings, tables_cfg, only=args.only)
+        n = pipeline.send_snapshot(settings, tables_cfg, only=args.only)
         log.info("✓ 已发送增量快照信号，回填 %d 张表（分块进行，可断点续传）", n)
         log.info("  进度可在监控面板/日志观察；中途重启会从上次的块继续，不会从头。")
         return 0
