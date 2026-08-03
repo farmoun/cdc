@@ -559,7 +559,7 @@ tables:
   order_by: '`created_at`, `id`'
   partition_by: created_at
   partition_unit: s          # created_at 为秒级 Unix 时间戳（10位）
-  disk: ext_disk             # 落到外接大盘（需先在 CK storage.xml 定义该磁盘）
+  disk: disk_1t              # 外接 1T 盘，CK config.xml 已定义 → /data/ck_disk1/
   comment: 日志备份表(2.49亿行/163GB)
   columns:
   - name: id
