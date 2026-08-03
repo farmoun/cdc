@@ -186,6 +186,12 @@ class TableDef:
     target_database: str = "default"
     order_by: str | None = None       # 未指定则用主键推断
     partition_by: str | None = None   # 未指定则尝试推断时间列
+    # partition_by 为整数时间戳列时，声明单位：s(秒，默认) / ms(毫秒)
+    partition_unit: str | None = None
+    # 存储位置（仅正式表用；Kafka 表/MV 不落盘）。二者互斥，disk 优先。
+    # 必须在建表时指定 —— 建好后改不了（只能重建 + 迁数据）。
+    disk: str | None = None            # 单盘，如 ext_disk（需在 CK storage.xml 定义）
+    storage_policy: str | None = None  # 存储策略，如 hot_cold（多盘/分层时用）
     comment: str = ""
     columns: list[ColumnDef] = field(default_factory=list)  # 空则需 introspect
 
@@ -236,6 +242,10 @@ def load_tables(path: Path | str | None = None) -> TablesConfig:
             )
             for c in (t.get("columns") or [])
         ]
+        if t.get("disk") and t.get("storage_policy"):
+            raise ConfigError(
+                f"tables[{i}] ({t['source_table']}) 的 disk 与 storage_policy 互斥，只能配其一"
+            )
         tables.append(
             TableDef(
                 source_database=t["source_database"],
@@ -244,6 +254,9 @@ def load_tables(path: Path | str | None = None) -> TablesConfig:
                 target_database=t.get("target_database", default_db),
                 order_by=t.get("order_by"),
                 partition_by=t.get("partition_by"),
+                partition_unit=t.get("partition_unit"),
+                disk=t.get("disk"),
+                storage_policy=t.get("storage_policy"),
                 comment=t.get("comment", ""),
                 columns=cols,
             )

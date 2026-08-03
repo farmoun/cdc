@@ -14,4 +14,5 @@ ENGINE = ReplacingMergeTree({{ ver_col }})
 ORDER BY ({{ order_by }})
 {% if partition_expr %}PARTITION BY {{ partition_expr }}
 {% endif %}{% if comment %}COMMENT '{{ comment | replace("'", "''") }}'
+{% endif %}{% if storage_settings %}SETTINGS {{ storage_settings }}
 {% endif %};

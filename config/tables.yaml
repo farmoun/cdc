@@ -553,6 +553,100 @@ tables:
     nullable: true
     is_pk: false
 - source_database: yibuapi
+  source_table: logs_bak
+  target_table: logs_bak
+  # created_at 打头：日志按时间查是主场景，且让 created_at 强制非空以支持分区
+  order_by: '`created_at`, `id`'
+  partition_by: created_at
+  partition_unit: s          # created_at 为秒级 Unix 时间戳（10位）
+  disk: ext_disk             # 落到外接大盘（需先在 CK storage.xml 定义该磁盘）
+  comment: 日志备份表(2.49亿行/163GB)
+  columns:
+  - name: id
+    mysql_type: bigint
+    nullable: false
+    is_pk: true
+  - name: user_id
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: created_at
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: type
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: content
+    mysql_type: longtext
+    nullable: true
+    is_pk: false
+  - name: username
+    mysql_type: varchar(191)
+    nullable: true
+    is_pk: false
+  - name: token_name
+    mysql_type: varchar(191)
+    nullable: true
+    is_pk: false
+  - name: model_name
+    mysql_type: varchar(191)
+    nullable: true
+    is_pk: false
+  - name: quota
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: prompt_tokens
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: completion_tokens
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: use_time
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: is_stream
+    mysql_type: tinyint(1)
+    nullable: true
+    is_pk: false
+  - name: channel_id
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: channel_name
+    mysql_type: longtext
+    nullable: true
+    is_pk: false
+  - name: token_id
+    mysql_type: bigint
+    nullable: true
+    is_pk: false
+  - name: group
+    mysql_type: varchar(191)
+    nullable: true
+    is_pk: false
+  - name: other
+    mysql_type: longtext
+    nullable: true
+    is_pk: false
+  - name: ip
+    mysql_type: varchar(191)
+    nullable: true
+    is_pk: false
+  - name: request_id
+    mysql_type: varchar(64)
+    nullable: true
+    is_pk: false
+  - name: upstream_request_id
+    mysql_type: varchar(128)
+    nullable: true
+    is_pk: false
+- source_database: yibuapi
   source_table: midjourneys
   target_table: midjourneys
   columns:

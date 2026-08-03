@@ -111,3 +111,15 @@ def is_time_type(mysql_type: str) -> bool:
     if not base:
         return False
     return base.group("base").lower() in ("date", "datetime", "timestamp")
+
+
+def is_int_type(mysql_type: str) -> bool:
+    """判断是否为整数类型（bigint/int/...）。
+
+    本项目大量表用 bigint 存 Unix 时间戳（如 logs.created_at），
+    这类列同样可以分区，但需要先 toDateTime 转换 —— 见 ck_generator._resolve_partition。
+    """
+    m = _TYPE_RE.match(mysql_type.strip())
+    if not m:
+        return False
+    return m.group("base").lower() in _INT_MAP

@@ -62,16 +62,45 @@ def _resolve_order_by(table: TableDef) -> str:
 
 def _resolve_partition(table: TableDef) -> str | None:
     col = table.partition_by
-    if col:
-        match = next((c for c in table.columns if c.name == col), None)
-        if match is None:
-            log.warning("表 %s 指定的 partition_by=%s 不在列中，忽略分区。", table.target_table, col)
-            return None
-        if not type_map.is_time_type(match.mysql_type):
-            log.warning("表 %s 的 partition_by=%s 非时间类型，忽略分区。", table.target_table, col)
-            return None
-        return f"toYYYYMM({col})"
-    # 未指定：不自动挑列，保持稳定（避免误选）。返回 None → 不分区。
+    if not col:
+        # 未指定：不自动挑列，保持稳定（避免误选）。返回 None → 不分区。
+        return None
+    match = next((c for c in table.columns if c.name == col), None)
+    if match is None:
+        log.warning("表 %s 指定的 partition_by=%s 不在列中，忽略分区。", table.target_table, col)
+        return None
+    if type_map.is_time_type(match.mysql_type):
+        return f"toYYYYMM(`{col}`)"
+    if type_map.is_int_type(match.mysql_type):
+        # bigint 存 Unix 时间戳（本项目大量表如此，如 logs.created_at）。
+        # 秒/毫秒无法从类型判断，用 partition_unit 声明；默认按秒。
+        unit = (table.partition_unit or "s").lower()
+        if unit in ("ms", "millis", "millisecond"):
+            return f"toYYYYMM(toDateTime(intDiv(`{col}`, 1000)))"
+        if unit in ("s", "sec", "second"):
+            return f"toYYYYMM(toDateTime(`{col}`))"
+        log.warning(
+            "表 %s 的 partition_unit=%s 非法（应为 s 或 ms），忽略分区。",
+            table.target_table, unit,
+        )
+        return None
+    log.warning(
+        "表 %s 的 partition_by=%s 类型 %s 不支持分区（需时间类型或整数时间戳），忽略分区。",
+        table.target_table, col, match.mysql_type,
+    )
+    return None
+
+
+def _storage_settings(table: TableDef) -> str | None:
+    """正式表的存储位置 SETTINGS 片段；未配置返回 None。
+
+    注意：必须建表时指定，建好后不可改（只能重建 + 迁数据）。
+    仅正式表需要 —— Kafka 表数据在 Kafka、MV 只转发，都不落盘。
+    """
+    if table.disk:
+        return f"disk = '{table.disk}'"
+    if table.storage_policy:
+        return f"storage_policy = '{table.storage_policy}'"
     return None
 
 
@@ -162,6 +191,7 @@ def build_table_sql(table: TableDef, settings: Settings, ck_major: int | None = 
         columns_block="\n".join(target_lines),
         order_by=order_by,
         partition_expr=partition_expr,
+        storage_settings=_storage_settings(table),
         comment=table.comment,
         ver_col=ver_col,
         del_col=del_col,
