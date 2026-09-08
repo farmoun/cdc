@@ -17,7 +17,7 @@ MySQL → Debezium → Kafka → ClickHouse 实时 CDC 同步的**配置驱动�
 | `deploy-connector` | 向 Kafka Connect REST 发布/更新连接器（幂等：无则 POST，有则 PUT） |
 | `status` | 连接器状态 + CK `system.kafka_consumers` |
 | `reconcile` | MySQL `COUNT(*)` vs CK `count() FINAL WHERE is_deleted=0` 行数对账 |
-| `serve` | 启动监控 Web 面板（FastAPI，默认端口 8000） |
+| `serve` | 启动监控 Web 面板（FastAPI，默认端口 8000），面板需登录（单用户） |
 
 ## Docker 部署与监控面板
 
@@ -27,8 +27,14 @@ MySQL → Debezium → Kafka → ClickHouse 实时 CDC 同步的**配置驱动�
 
 本地起监控面板：
 ```bash
-python main.py serve --port 8000          # 打开 http://localhost:8000
+python main.py serve --port 8000          # 打开 http://localhost:8000，登录后使用
 ```
+
+面板登录（单用户 `root`）：
+- 用户名/密码读取 `config/settings.yaml` 的 `panel` 段（`user` / `password`，支持 `${ENV_VAR}` 引用）。
+- 无 `panel` 段或密码为空时，回退内置默认 `root` / `cdc@123`（仅首启/本地）。
+- 改密码即全员会话失效，重启服务不失效；生产务必配置强密码。
+- 容器部署见 [`docker/.env.example`](docker/.env.example) 的 `CDC_PANEL_USER` / `CDC_PANEL_PASSWORD`。
 
 ## 快速开始
 

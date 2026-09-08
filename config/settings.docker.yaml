@@ -38,3 +38,7 @@ debezium:
   tasks_max: ${DBZ_TASKS_MAX}
   snapshot_mode: ${DBZ_SNAPSHOT_MODE}
   history_topic: ${DBZ_HISTORY_TOPIC}
+
+panel:
+  user: ${CDC_PANEL_USER:-root}
+  password: ${CDC_PANEL_PASSWORD:-}

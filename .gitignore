@@ -24,6 +24,7 @@ docker/.env
 
 # 运行时生成的配置（网页保存/播种）
 config/settings.yaml
+config/alerts.yaml
 config/schema_cache.json
 config/saved_queries.json
 config/ui_state.json

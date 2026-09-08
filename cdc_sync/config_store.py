@@ -35,6 +35,7 @@ _EMPTY_SETTINGS = {
     "connect": {"url": "http://connect:8083"},
     "debezium": {"connector_name": "cdc-connector", "server_name": "cdc", "server_id": 1001,
                  "tasks_max": 4, "snapshot_mode": "initial", "history_topic": "schema-changes.cdc"},
+    "panel": {"user": "root", "password": ""},
 }
 
 
@@ -57,6 +58,10 @@ def read_settings_dict() -> dict:
             merged[k] = {**v, **(src if isinstance(src, dict) else {})}
         else:
             merged[k] = raw.get(k, v)
+    # 保留模板之外的自定义段（如 ai）
+    for k, v in raw.items():
+        if k not in merged:
+            merged[k] = v
     return merged
 
 
@@ -113,6 +118,7 @@ def seed_settings_from(env_template: Path | str, *, force: bool = False) -> tupl
         "debezium": {"connector_name": s.debezium.connector_name, "server_name": s.debezium.server_name,
                      "server_id": s.debezium.server_id, "tasks_max": s.debezium.tasks_max,
                      "snapshot_mode": s.debezium.snapshot_mode, "history_topic": s.debezium.history_topic},
+        "panel": {"user": s.panel.user, "password": s.panel.password},
     }
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")

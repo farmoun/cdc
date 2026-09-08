@@ -7,11 +7,66 @@ const esc = (s) => String(s == null ? '' : s)
 
 async function getJSON(url) {
   const r = await fetch(url);
+  if (r.status === 401) showLogin();
   return r.json();
 }
 async function postJSON(url) {
   const r = await fetch(url, { method: 'POST' });
+  if (r.status === 401) showLogin();
   return r.json();
+}
+// 带鉴权的 fetch 封装：会话过期(401)时弹登录框
+async function fetchAuth(url, opts) {
+  const r = await fetch(url, opts);
+  if (r.status === 401) showLogin();
+  return r;
+}
+
+// ---------------- 登录 / 退出 ----------------
+function clearPolling() {
+  if (timer) { clearInterval(timer); timer = null; }
+  syncing = false;
+}
+
+function showLogin() {
+  clearPolling();
+  $('#loginOverlay').style.display = 'flex';
+  $('#loginMsg').textContent = '';
+  $('#loginPass').value = '';
+  $('#loginPass').focus();
+}
+function hideLogin() {
+  $('#loginOverlay').style.display = 'none';
+}
+
+async function doLogin(ev) {
+  ev.preventDefault();
+  const btn = $('#loginBtn'); btn.disabled = true;
+  const msg = $('#loginMsg'); msg.textContent = ''; msg.className = 'action-msg';
+  const body = {
+    username: $('#loginUser').value.trim(),
+    password: $('#loginPass').value,
+  };
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (j.ok) { hideLogin(); initMain(); }
+    else { msg.textContent = '✗ ' + (j.error || '登录失败'); msg.className = 'action-msg err'; }
+  } catch (e) {
+    msg.textContent = '✗ ' + e; msg.className = 'action-msg err';
+  }
+  btn.disabled = false;
+}
+
+async function doLogout() {
+  clearPolling();
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } catch (e) { /* ignore */ }
+  showLogin();
 }
 
 function statusClass(s) {
@@ -151,6 +206,51 @@ async function doAction(action, btn) {
   refreshAll();
 }
 
+// ---------------- 登录告警 ----------------
+const ALERT_TYPE_LABELS = {
+  brute_force: '连续登录失败',
+  risky_query: '高风险查询',
+};
+const ALERT_ACTION_LABELS = {
+  login_fail: '密码错误',
+  confirmed_execute: '确认执行',
+};
+
+async function loadAlerts() {
+  const box = $('#alertsBox');
+  if (!box) return;
+  const res = await getJSON('/api/alerts');
+  if (!res.ok) { box.innerHTML = `<div class="errline">✗ ${esc(res.error)}</div>`; return; }
+  const rows = res.data;
+  const tabBadge = $('#alertsTabBadge');
+  if (!rows.length) {
+    box.innerHTML = '<span class="muted">暂无告警</span>';
+    if (tabBadge) { tabBadge.textContent = ''; tabBadge.style.display = 'none'; }
+    return;
+  }
+  if (tabBadge) { tabBadge.textContent = rows.length; tabBadge.style.display = ''; }
+  let html = `<table>
+    <tr><th>时间</th><th>类型</th><th>行为</th><th>用户</th><th>IP</th><th>详情</th><th>语句</th></tr>`;
+  for (const r of rows) {
+    const typeLabel = ALERT_TYPE_LABELS[r.type] || r.type || '—';
+    const actionLabel = ALERT_ACTION_LABELS[r.action] || r.action || '—';
+    const sqlCell = r.sql
+      ? `<button class="btn small" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none';this.textContent=this.textContent==='查看'?'收起':'查看'">查看</button><pre class="risk-sql-preview" style="display:none;margin-top:6px">${esc(r.sql)}</pre>`
+      : '—';
+    html += `<tr>
+      <td style="white-space:nowrap">${esc(r.time)}</td>
+      <td><span class="badge err">${esc(typeLabel)}</span></td>
+      <td>${esc(actionLabel)}</td>
+      <td>${esc(r.user || '—')}</td>
+      <td>${esc(r.ip || '—')}</td>
+      <td>${esc(r.detail || '')}</td>
+      <td style="max-width:300px">${sqlCell}</td>
+    </tr>`;
+  }
+  html += `</table>`;
+  box.innerHTML = html;
+}
+
 // ---------------- 刷新调度 ----------------
 async function refreshAll() {
   try {
@@ -160,6 +260,7 @@ async function refreshAll() {
   loadConnector();
   loadLag();
   loadCK();
+  loadAlerts();
   $('#lastUpdate').textContent = '更新于 ' + new Date().toLocaleTimeString();
 }
 
@@ -231,6 +332,14 @@ const SETTINGS_SCHEMA = [
     ['server_id', 'server.id', 'number'], ['tasks_max', 'tasks.max', 'number'],
     ['snapshot_mode', 'snapshot.mode', 'text'], ['history_topic', 'history topic', 'text'],
   ]],
+  ['panel', '监控面板登录', [
+    ['user', '用户名', 'text'], ['password', '密码', 'password'],
+  ]],
+  ['ai', 'AI 风险检测', [
+    ['url', 'API 地址 (到 /v1)', 'text'],
+    ['key', 'API Key', 'password'],
+    ['model', '模型名', 'text'],
+  ]],
 ];
 
 // 可测试连通性的分组 → 测试端点组件名
@@ -269,7 +378,7 @@ async function testConn(component, btn) {
   out.textContent = ' 测试中…'; out.className = 'test-result';
   if (btn) btn.disabled = true;
   try {
-    const r = await fetch(`/api/test/${component}`, {
+    const r = await fetchAuth(`/api/test/${component}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(collectSettings()),
     }).then((x) => x.json());
@@ -309,7 +418,7 @@ function collectSettings() {
 
 async function saveSettings() {
   const msg = $('#settingsMsg'); msg.textContent = '保存中…'; msg.className = 'action-msg';
-  const r = await fetch('/api/config/settings', {
+  const r = await fetchAuth('/api/config/settings', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(collectSettings()),
   }).then((x) => x.json());
@@ -326,7 +435,7 @@ async function loadTables() {
 
 async function saveTables() {
   const msg = $('#tablesMsg'); msg.textContent = '保存中…'; msg.className = 'action-msg';
-  const r = await fetch('/api/config/tables', {
+  const r = await fetchAuth('/api/config/tables', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: $('#tablesEditor').value }),
   }).then((x) => x.json());
@@ -341,7 +450,7 @@ async function importSql() {
   if (!database) { msg.textContent = '请填写源库名'; msg.className = 'action-msg err'; return; }
   msg.textContent = '解析中…'; msg.className = 'action-msg';
   const sql = await file.text();
-  const r = await fetch('/api/config/import-sql', {
+  const r = await fetchAuth('/api/config/import-sql', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql, database, target_database: $('#impTargetDb').value.trim(), prefix: $('#impPrefix').value.trim() }),
   }).then((x) => x.json());
@@ -357,8 +466,10 @@ function switchTab(name) {
   $('#tab-monitor').style.display = name === 'monitor' ? '' : 'none';
   $('#tab-query').style.display = name === 'query' ? '' : 'none';
   $('#tab-config').style.display = name === 'config' ? '' : 'none';
+  $('#tab-alerts').style.display = name === 'alerts' ? '' : 'none';
   if (name === 'config') { loadSettings(); loadTables(); }
   if (name === 'query') loadSavedQueries();
+  if (name === 'alerts') loadAlerts();
 }
 
 // ================= 查询页 =================
@@ -369,10 +480,40 @@ async function runQuery() {
   const msg = $('#queryMsg'); const box = $('#queryResult');
   const sql = $('#queryInput').value.trim();
   if (!sql) { msg.textContent = '请输入查询语句'; msg.className = 'action-msg err'; return; }
-  localStorage.setItem('cdc_last_query', sql);      // 记住上次查询
+  localStorage.setItem('cdc_last_query', sql);
+
+  // AI 风险检测
+  msg.textContent = 'AI 检测中…'; msg.className = 'action-msg';
+  box.innerHTML = '<span class="muted">检测中…</span>';
+  try {
+    const chk = await fetchAuth('/api/ai/check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql }),
+    }).then((x) => x.json());
+    if (chk.ok && chk.data && chk.data.risk && !chk.data.skipped) {
+      // 高风险：弹二次确认
+      const confirmed = await showRiskConfirm(chk.data.reason || '该语句包含高风险操作', sql);
+      if (!confirmed) {
+        msg.textContent = '已取消'; msg.className = 'action-msg';
+        box.innerHTML = '';
+        return;
+      }
+      // 用户确认 → 记录告警
+      await fetchAuth('/api/alerts/record', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'risky_query', action: 'confirmed_execute',
+          detail: `用户确认执行高风险 SQL（AI 判断：${chk.data.reason || '未知'}）`,
+          sql,
+        }),
+      }).catch(() => {});
+      loadAlerts();
+    }
+  } catch (_) { /* AI 检测失败不阻断查询 */ }
+
   msg.textContent = '执行中…'; msg.className = 'action-msg';
   box.innerHTML = '<span class="muted">查询中…</span>';
-  const r = await fetch('/api/query', {
+  const r = await fetchAuth('/api/query', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql }),
   }).then((x) => x.json());
@@ -386,6 +527,25 @@ async function runQuery() {
   }
   html += '</table>';
   box.innerHTML = html;
+}
+
+// 风险确认弹窗（返回 Promise<boolean>）
+function showRiskConfirm(reason, sql) {
+  return new Promise((resolve) => {
+    const modal = $('#riskModal');
+    $('#riskReason').textContent = reason;
+    $('#riskSqlPreview').textContent = sql.length > 200 ? sql.slice(0, 200) + '…' : sql;
+    modal.style.display = 'flex';
+    function cleanup() {
+      modal.style.display = 'none';
+      $('#riskConfirmBtn').removeEventListener('click', onConfirm);
+      $('#riskCancelBtn').removeEventListener('click', onCancel);
+    }
+    function onConfirm() { cleanup(); resolve(true); }
+    function onCancel()  { cleanup(); resolve(false); }
+    $('#riskConfirmBtn').addEventListener('click', onConfirm);
+    $('#riskCancelBtn').addEventListener('click', onCancel);
+  });
 }
 
 async function loadSavedQueries() {
@@ -423,7 +583,7 @@ async function exportQuery() {
   if (!sql) { msg.textContent = '请输入查询语句'; msg.className = 'action-msg err'; return; }
   msg.textContent = '导出中…'; msg.className = 'action-msg';
   try {
-    const resp = await fetch('/api/query/export', {
+    const resp = await fetchAuth('/api/query/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql, format: fmt }),
     });
@@ -451,7 +611,7 @@ async function saveQuery() {
   const sql = $('#queryInput').value.trim();
   if (!name) { msg.textContent = '请填写查询名字'; msg.className = 'action-msg err'; return; }
   if (!sql) { msg.textContent = '查询语句为空'; msg.className = 'action-msg err'; return; }
-  const r = await fetch('/api/queries', {
+  const r = await fetchAuth('/api/queries', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, sql }),
   }).then((x) => x.json());
@@ -460,7 +620,7 @@ async function saveQuery() {
 }
 
 async function deleteSavedQuery(name) {
-  const r = await fetch('/api/queries/' + encodeURIComponent(name), { method: 'DELETE' }).then((x) => x.json());
+  const r = await fetchAuth('/api/queries/' + encodeURIComponent(name), { method: 'DELETE' }).then((x) => x.json());
   if (r.ok) loadSavedQueries();
 }
 
@@ -486,10 +646,155 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
+  // 登录
+  $('#loginForm').addEventListener('submit', doLogin);
+  $('#logoutBtn').addEventListener('click', doLogout);
+  // 先探 /api/me：已登录则初始化界面，未登录弹登录框
+  getJSON('/api/me').then((r) => {
+    if (r.ok) { hideLogin(); initMain(); }
+    else showLogin();
+  }).catch(() => showLogin());
+});
+
+// 登录成功后才初始化轮询与状态
+function initMain() {
   // 无论开/停，先拉一次当前状态显示快照
   refreshAll();
   // 从后端读同步开关状态并恢复（换浏览器/刷新一致）；running 才自动轮询
   getJSON('/api/pipeline').then((r) => {
     if (r.ok && r.data && r.data.desired === 'running') applyState(true);
   }).catch(() => {});
-});
+  initTsConverter();
+}
+
+// ================= 时间戳转换器 =================
+
+const TS_ZONES = [
+  { label: 'UTC+8 · Beijing / Shanghai', offset: 8 },
+  { label: 'UTC+0 · UTC',                offset: 0 },
+  { label: 'UTC+9 · Tokyo / Seoul',       offset: 9 },
+  { label: 'UTC-5 · New York (EST)',      offset: -5 },
+  { label: 'UTC-8 · Los Angeles (PST)',   offset: -8 },
+];
+
+function buildTzOptions(selectEl, defaultOffset = 8) {
+  selectEl.innerHTML = TS_ZONES.map((z) =>
+    `<option value="${z.offset}" ${z.offset === defaultOffset ? 'selected' : ''}>${esc(z.label)}</option>`
+  ).join('');
+}
+
+/** 把 epoch 秒换算成指定 UTC 偏移的本地字符串 */
+function epochToLocal(sec, offsetHours) {
+  const ms = sec * 1000 + offsetHours * 3600000;
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}/${pad(d.getUTCMonth()+1)}/${pad(d.getUTCDate())} `
+       + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+}
+
+/** 把指定 UTC 偏移的本地时间字符串转回 epoch 秒 */
+function localToEpoch(str, offsetHours) {
+  const m = str.match(/(\d{4})[^\d](\d{1,2})[^\d](\d{1,2})[^\d](\d{1,2})[^\d](\d{1,2})[^\d](\d{1,2})/);
+  if (!m) return NaN;
+  const [, Y, Mo, D, H, Mi, S] = m.map(Number);
+  return Date.UTC(Y, Mo-1, D, H, Mi, S) / 1000 - offsetHours * 3600;
+}
+
+/** 相对时间描述 */
+function relTime(sec) {
+  const diff = Math.round(Date.now() / 1000) - sec;
+  const abs = Math.abs(diff);
+  const future = diff < 0;
+  if (abs < 60) return future ? `${abs} 秒后` : `${abs} 秒前`;
+  if (abs < 3600) return future ? `${Math.round(abs/60)} 分钟后` : `${Math.round(abs/60)} 分钟前`;
+  if (abs < 86400) return future ? `${Math.round(abs/3600)} 小时后` : `${Math.round(abs/3600)} 小时前`;
+  return future ? `${Math.round(abs/86400)} 天后` : `${Math.round(abs/86400)} 天前`;
+}
+
+function tsMoreFmts(sec, offsetHours) {
+  const ms = sec * 1000 + offsetHours * 3600000;
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  const iso = new Date(sec * 1000).toISOString();
+  const ymd = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+  const hms = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  return [
+    ['毫秒时间戳', String(sec * 1000)],
+    ['ISO 8601 (UTC)', iso],
+    ['日期', ymd],
+    ['时间', hms],
+  ];
+}
+
+function renderMoreFmts(containerId, rows) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = rows.map(([label, val]) =>
+    `<div class="ts-fmt-row"><span class="ts-fmt-label">${esc(label)}</span><span class="ts-fmt-val">${esc(val)}</span></div>`
+  ).join('');
+}
+
+function copyText(text, btnEl) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btnEl.textContent;
+    btnEl.textContent = '✓';
+    setTimeout(() => { btnEl.textContent = orig; }, 1200);
+  }).catch(() => {});
+}
+
+function nowIsoLocal(offsetHours) {
+  const sec = Math.floor(Date.now() / 1000);
+  return epochToLocal(sec, offsetHours).replace('/', '-').replace('/', '-');
+}
+
+function initTsConverter() {
+  const tsTzSel = document.getElementById('tsTzSelect');
+  const dtTzSel = document.getElementById('dtTzSelect');
+  if (!tsTzSel || !dtTzSel) return;
+  buildTzOptions(tsTzSel, 8);
+  buildTzOptions(dtTzSel, 8);
+
+  function runTs() {
+    const raw = (document.getElementById('tsInput').value || '').trim();
+    const offset = Number(tsTzSel.value);
+    if (!raw) { document.getElementById('tsResultValue').textContent = '—'; document.getElementById('tsResultRel').textContent = ''; return; }
+    let sec = Number(raw);
+    if (isNaN(sec)) { document.getElementById('tsResultValue').textContent = '格式错误'; return; }
+    if (sec > 1e12) sec = Math.floor(sec / 1000);  // 毫秒自动转秒
+    const local = epochToLocal(sec, offset);
+    document.getElementById('tsResultValue').textContent = local;
+    document.getElementById('tsResultRel').textContent = relTime(sec);
+    renderMoreFmts('tsMoreFmts', tsMoreFmts(sec, offset));
+    document.getElementById('tsCopyBtn').onclick = () => copyText(local, document.getElementById('tsCopyBtn'));
+  }
+
+  function runDt() {
+    const raw = (document.getElementById('dtInput').value || '').trim();
+    const offset = Number(dtTzSel.value);
+    if (!raw) { document.getElementById('dtResultValue').textContent = '—'; document.getElementById('dtResultRel').textContent = ''; return; }
+    const sec = localToEpoch(raw, offset);
+    if (isNaN(sec)) { document.getElementById('dtResultValue').textContent = '格式错误'; return; }
+    document.getElementById('dtResultValue').textContent = String(Math.floor(sec));
+    document.getElementById('dtResultRel').textContent = relTime(sec);
+    renderMoreFmts('dtMoreFmts', tsMoreFmts(Math.floor(sec), offset));
+    document.getElementById('dtCopyBtn').onclick = () => copyText(String(Math.floor(sec)), document.getElementById('dtCopyBtn'));
+  }
+
+  document.getElementById('tsInput').addEventListener('input', runTs);
+  tsTzSel.addEventListener('change', runTs);
+  document.getElementById('tsNowBtn').addEventListener('click', () => {
+    document.getElementById('tsInput').value = String(Math.floor(Date.now() / 1000));
+    runTs();
+  });
+
+  document.getElementById('dtInput').addEventListener('input', runDt);
+  dtTzSel.addEventListener('change', runDt);
+  document.getElementById('dtNowBtn').addEventListener('click', () => {
+    document.getElementById('dtInput').value = nowIsoLocal(Number(dtTzSel.value));
+    runDt();
+  });
+
+  // 默认填入当前时间戳
+  document.getElementById('tsInput').value = String(Math.floor(Date.now() / 1000));
+  runTs();
+}

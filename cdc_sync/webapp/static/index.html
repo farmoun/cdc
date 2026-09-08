@@ -14,6 +14,7 @@
       <button id="refreshBtn" class="btn">立即刷新</button>
       <span id="pipelineState" class="muted">同步已停止</span>
       <span id="lastUpdate" class="muted"></span>
+      <button id="logoutBtn" class="btn">退出登录</button>
     </div>
   </header>
 
@@ -21,6 +22,7 @@
     <button class="tab active" data-tab="monitor">监控</button>
     <button class="tab" data-tab="query">查询</button>
     <button class="tab" data-tab="config">配置</button>
+    <button class="tab" data-tab="alerts">告警 <span id="alertsTabBadge" class="tab-badge" style="display:none"></span></button>
   </nav>
 
   <!-- ============ 监控页 ============ -->
@@ -38,8 +40,8 @@
     <h2>操作</h2>
     <div class="actions">
       <button class="btn" data-action="deploy-idle">完整部署(建表+注册连接器，停止态)</button>
-      <button class="btn warn" data-action="restart">重启连接器</button>
-      <button class="btn" data-action="reconcile">运行对账</button>
+      <button class="btn" data-action="restart">重启连接器</button>
+      <button class="btn" data-action="reconcile" style="display:none">运行对账</button>
       <span id="actionMsg" class="action-msg"></span>
     </div>
     <p class="muted">同步的开启/停止由右上角「开启同步」按钮严格控制。部署仅建好表与连接器，不会自动开始。</p>
@@ -70,28 +72,83 @@
       <div id="reconcileBox" class="box">点击「运行对账」加载</div>
     </section>
   </div>
+
+  </div>
+
+  <!-- ============ 告警页 ============ -->
+  <div id="tab-alerts" class="tabpage" style="display:none">
+  <section class="panel">
+    <h2>安全告警</h2>
+    <p class="muted">告警持久化保存到 <code>config/alerts.yaml</code>，服务重启后不丢失。</p>
+    <div id="alertsBox" class="box">
+      <span class="muted">加载中…</span>
+    </div>
+  </section>
   </div>
 
   <!-- ============ 查询页 ============ -->
   <div id="tab-query" class="tabpage" style="display:none">
-    <section class="panel">
-      <h2>ClickHouse 便捷查询</h2>
-      <textarea id="queryInput" class="editor" spellcheck="false"
-        placeholder="输入 SQL，例如：SELECT * FROM yibuapi.checkins FINAL LIMIT 20"></textarea>
-      <div class="actions" style="margin-top:10px">
-        <button id="runQuery" class="btn primary">执行 (Ctrl+Enter)</button>
-        <select id="exportFormat" class="select">
-          <option value="csv">CSV</option>
-          <option value="xlsx">XLSX</option>
-          <option value="xls">XLS</option>
-        </select>
-        <button id="exportQuery" class="btn">导出</button>
-        <input id="queryName" type="text" placeholder="给这条查询起个名字" style="min-width:200px">
-        <button id="saveQuery" class="btn">保存查询</button>
-        <span id="queryMsg" class="action-msg"></span>
+  <!-- 时间戳转换器 -->
+  <details class="panel ts-collapsible">
+    <summary class="ts-collapse-summary">时间戳转换</summary>
+    <div class="ts-grid">
+      <!-- 时间戳 → 日期时间 -->
+      <div class="ts-card">
+        <div class="ts-card-title"><span class="ts-hash">#</span> 时间戳 &rarr; 日期时间</div>
+        <div class="ts-input-row">
+          <input id="tsInput" type="text" class="ts-input" placeholder="秒或毫秒，如 1780713509">
+          <button class="btn small" id="tsNowBtn">⏱ 现在</button>
+        </div>
+        <select id="tsTzSelect" class="ts-tz"></select>
+        <div class="ts-result">
+          <div class="ts-result-meta">
+            <span class="ts-result-label">本地时间</span>
+            <button class="ts-copy" id="tsCopyBtn" title="复制">⎘</button>
+          </div>
+          <div class="ts-result-value" id="tsResultValue">—</div>
+          <div class="ts-result-rel" id="tsResultRel"></div>
+        </div>
+        <details class="ts-more"><summary>更多格式</summary><div id="tsMoreFmts" class="ts-more-body"></div></details>
       </div>
-      <div id="queryResult" class="box" style="margin-top:14px"></div>
-    </section>
+      <!-- 日期时间 → 时间戳 -->
+      <div class="ts-card">
+        <div class="ts-card-title"><span class="ts-cal">▦</span> 日期时间 &rarr; 时间戳 <span class="ts-hint" title="输入当前时区的本地时间">ⓘ</span></div>
+        <div class="ts-input-row">
+          <input id="dtInput" type="text" class="ts-input" placeholder="如 2026-06-06 10:37:40">
+          <button class="btn small" id="dtNowBtn">⏱ 现在</button>
+        </div>
+        <select id="dtTzSelect" class="ts-tz"></select>
+        <div class="ts-result">
+          <div class="ts-result-meta">
+            <span class="ts-result-label">秒级时间戳</span>
+            <button class="ts-copy" id="dtCopyBtn" title="复制">⎘</button>
+          </div>
+          <div class="ts-result-value" id="dtResultValue">—</div>
+          <div class="ts-result-rel" id="dtResultRel"></div>
+        </div>
+        <details class="ts-more"><summary>更多格式</summary><div id="dtMoreFmts" class="ts-more-body"></div></details>
+      </div>
+    </div>
+  </details>
+
+  <section class="panel">
+    <h2>ClickHouse 便捷查询</h2>
+    <textarea id="queryInput" class="editor" spellcheck="false"
+      placeholder="输入 SQL，例如：SELECT * FROM yibuapi.checkins FINAL LIMIT 20"></textarea>
+    <div class="actions" style="margin-top:10px">
+      <button id="runQuery" class="btn primary">执行 (Ctrl+Enter)</button>
+      <select id="exportFormat" class="select">
+        <option value="csv">CSV</option>
+        <option value="xlsx">XLSX</option>
+        <option value="xls">XLS</option>
+      </select>
+      <button id="exportQuery" class="btn">导出</button>
+      <input id="queryName" type="text" placeholder="给这条查询起个名字" style="min-width:200px">
+      <button id="saveQuery" class="btn">保存查询</button>
+      <span id="queryMsg" class="action-msg"></span>
+    </div>
+    <div id="queryResult" class="box" style="margin-top:14px"></div>
+  </section>
 
     <section class="panel">
       <h2>已保存的查询</h2>
@@ -141,6 +198,39 @@
   </div>
 
   <footer class="muted">cdc_sync · 监控面板</footer>
+
+  <!-- 登录遮罩：未登录时显示 -->
+  <div id="loginOverlay" class="login-overlay" style="display:none">
+    <form id="loginForm" class="login-box">
+      <h2>CDC 同步监控</h2>
+      <label>用户名
+        <input id="loginUser" type="text" value="root" autocomplete="username" readonly>
+      </label>
+      <label>密码
+        <input id="loginPass" type="password" autocomplete="current-password" placeholder="请输入密码">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary" id="loginBtn">登录</button>
+        <span id="loginMsg" class="action-msg"></span>
+      </div>
+    </form>
+  </div>
+
+  <!-- 风险确认弹窗 -->
+  <div id="riskModal" class="login-overlay" style="display:none">
+    <div class="login-box risk-modal-box">
+      <div class="risk-modal-icon">⚠️</div>
+      <h2 style="color:var(--warn)">高风险操作确认</h2>
+      <p class="muted" style="text-align:center;margin:0">AI 检测到该语句包含高风险操作，执行后<strong style="color:var(--warn)">无法撤销</strong>，本次操作将记录到告警日志。</p>
+      <div class="risk-reason" id="riskReason"></div>
+      <pre class="risk-sql-preview" id="riskSqlPreview"></pre>
+      <div class="actions" style="justify-content:center;gap:12px">
+        <button id="riskCancelBtn" class="btn" style="min-width:90px">取消</button>
+        <button id="riskConfirmBtn" class="btn warn" style="min-width:90px">确认执行</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

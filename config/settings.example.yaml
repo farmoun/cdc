@@ -37,3 +37,15 @@ debezium:
   tasks_max: 4
   snapshot_mode: initial
   history_topic: schema-changes.mysql-business
+
+# 监控面板登录（单用户，密码可留空则回退内置默认 cdc@123，也可用 ${ENV_VAR} 引用）
+panel:
+  user: root
+  password: ${CDC_PANEL_PASSWORD}
+
+# AI 风险检测（可选）：查询页执行 SQL 前先调 AI 判断风险，高风险弹二次确认并记录告警
+# 兼容 OpenAI 格式的 API（如 OpenAI、Azure OpenAI、Claude API via proxy、本地 Ollama 等）
+ai:
+  url: https://api.openai.com/v1   # API 地址（到 /v1，不含 /chat/completions）
+  key: ${AI_API_KEY}               # API Key
+  model: gpt-4o-mini               # 模型名，如 gpt-4o、claude-sonnet-5 等

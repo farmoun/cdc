@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?)\}")
 
 # 项目根目录（本文件位于 <root>/cdc_sync/config.py）
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,12 +23,15 @@ DEFAULT_TABLES = CONFIG_DIR / "tables.yaml"
 
 
 def _interpolate_env(value: Any) -> Any:
-    """递归地把字符串里的 ${VAR} 替换为环境变量值。"""
+    """递归地把字符串里的 ${VAR} / ${VAR:-default} 替换为环境变量值。"""
     if isinstance(value, str):
         def repl(m: re.Match) -> str:
-            var = m.group(1)
+            expr = m.group(1)
+            var, sep, default = expr.partition(":-")
             env = os.environ.get(var)
             if env is None:
+                if sep:  # 提供了 :-默认（允许默认值为空字符串）
+                    return default
                 raise ConfigError(f"环境变量未设置: {var}（在配置中被 ${{{var}}} 引用）")
             return env
         return _ENV_PATTERN.sub(repl, value)
@@ -85,6 +88,13 @@ class DebeziumConf:
 
 
 @dataclass
+class PanelConf:
+    """监控面板登录（单用户）。缺密码时 auth 回退内置默认值。"""
+    user: str = "root"
+    password: str = ""
+
+
+@dataclass
 class Settings:
     mysql: MySQLConf = field(default_factory=MySQLConf)
     clickhouse: ClickHouseConf = field(default_factory=ClickHouseConf)
@@ -94,6 +104,7 @@ class Settings:
     schema_registry_url_for_ck: str = "http://localhost:8081"
     connect_url: str = "http://connect:8083"
     debezium: DebeziumConf = field(default_factory=DebeziumConf)
+    panel: PanelConf = field(default_factory=PanelConf)
 
 
 def _as_int(v, default: int) -> int:
@@ -153,6 +164,7 @@ def build_settings(raw: dict) -> Settings:
         history_topic=dbz.get("history_topic", "schema-changes.mysql-business"),
     )
     sr = raw.get("schema_registry") or {}
+    panel = raw.get("panel") or {}
     return Settings(
         mysql=mysql,
         clickhouse=clickhouse,
@@ -164,6 +176,7 @@ def build_settings(raw: dict) -> Settings:
         schema_registry_url_for_ck=sr.get("url_for_ck", "http://localhost:8081"),
         connect_url=(raw.get("connect") or {}).get("url", "http://connect:8083"),
         debezium=debezium,
+        panel=PanelConf(user=panel.get("user", "root"), password=panel.get("password", "")),
     )
 
 

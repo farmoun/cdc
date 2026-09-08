@@ -23,7 +23,7 @@ ENV CDC_SETTINGS=config/settings.yaml
 ENV CDC_TABLES=config/tables.yaml
 
 HEALTHCHECK --interval=20s --timeout=5s --retries=5 \
-  CMD curl -f http://localhost:8000/api/overview || exit 1
+  CMD curl -f http://localhost:8000/api/health || exit 1
 
 # 首启：若 settings.yaml 不存在，从 env 模板播种一次；随后启动监控服务
 CMD ["sh", "-c", "python main.py render-config --from config/settings.docker.yaml && python main.py --settings config/settings.yaml serve --host 0.0.0.0 --port 8000"]

@@ -13,10 +13,14 @@ A 服 (MySQL) ──binlog──▶ [B 服 docker]  kafka + schema-registry + co
 
 | 组件 | 端口 | 说明 |
 |------|------|------|
-| cdc-monitor（监控面板） | `8080` | 浏览器打开 `http://B服IP:8080` |
+| cdc-monitor（监控面板） | `8080` | 浏览器打开 `http://B服IP:8080`，需登录（默认 `root` / `cdc@123`） |
 | Kafka（供宿主 CK） | `9094` | 原生 CK 用 `localhost:9094` |
 | Schema Registry | `8081` | |
 | Kafka Connect REST | `8083` | |
+
+> **面板登录**：监控面板所有 `/api` 请求都要求先登录。用户名/密码读取 `config/settings.yaml`
+> 的 `panel` 段（由 `.env` 的 `CDC_PANEL_USER`/`CDC_PANEL_PASSWORD` 播种），也可在面板「配置」页直接改。
+> 默认（未配置时）为 `root` / `cdc@123`，生产必改。登录后会话（HttpOnly Cookie）默认 12h 生效。
 
 > **默认单节点 Kafka**（约 3~4G 内存，一键即起）。需要高可用（3 节点 RF=3、容忍单节点故障）时改用
 > `docker compose -f docker-compose.ha.yml up -d --build`，并按 `.env` 注释调整两个 broker 地址。
@@ -71,11 +75,11 @@ docker compose ps                                             # 待 healthy
 docker compose exec -T cdc-monitor python main.py bootstrap   # 建表+发布连接器
 ```
 
-启动后浏览器打开 **`http://40.160.14.146:8080`**（B 服 IP + 8080）。这次是**容器里的监控**，
+启动后浏览器打开 **`http://B服IP:8080`**（B 服 IP + 8080）。这次是**容器里的监控**，
 之前失败的 Kafka / Schema Registry / Kafka Connect 三个「测试连接」现在都会变绿。
 
-> `.env` 里 IP 已按你的环境预填：MySQL `147.135.76.13`、CK 走 `host.docker.internal`（同机宿主）。
-> 若 CK 测试不通，把 `.env` 的 `CK_HOST` 改成 `40.160.14.146` 再 `docker compose up -d`。
+> `.env` 里请按实际环境填写：`MYSQL_HOST`（A 服务器 IP）、`CK_HOST`（默认 `host.docker.internal`，与本栈同机时有效）。
+> 若 CK 测试不通，把 `.env` 的 `CK_HOST` 改成 B 服的实际 IP 再 `docker compose up -d`。
 >
 > `bootstrap` / `deploy.sh` 都是**幂等**的，可反复执行（建表用 IF NOT EXISTS，连接器用更新）。
 
@@ -119,7 +123,7 @@ docker compose exec cdc-monitor python main.py reconcile
 | 三个测试仍 `getaddrinfo failed` | 监控没跑在 docker 里。必须用容器版监控（`http://B服IP:8080`），别在 docker 外单独跑 |
 | 连接器 FAILED，连不上 MySQL | A 服 3306 是否放行 B 服 IP；账号权限；`.env` 的 `MYSQL_HOST` |
 | CK 消费不到数据 | CK 的 Kafka 引擎表 broker 是否 `localhost:9094`（= `KAFKA_BROKER_FOR_CK`）；`docker compose logs kafka` 广播地址 |
-| 监控连不上 CK | `.env` 的 `CK_HOST`（默认 `host.docker.internal`，不通则改 `40.160.14.146`）；CK 是否监听 0.0.0.0 |
+| 监控连不上 CK | `.env` 的 `CK_HOST`（默认 `host.docker.internal`，不通则改成 B 服实际 IP）；CK 是否监听 0.0.0.0 |
 | Kafka lag 一直涨 | CK 消费是否异常（面板/`system.kafka_consumers`）；`docker compose logs connect` |
 | 位点丢失需重做 | A 服 binlog 保留期 `expire_logs_days` 是否覆盖快照+追赶窗口 |
 

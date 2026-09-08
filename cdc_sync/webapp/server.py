@@ -16,6 +16,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from . import auth
+
 from .. import (
     ck_client,
     ck_generator,
@@ -48,6 +50,24 @@ async def _no_cache_static(request: Request, call_next):
     return resp
 
 
+@app.middleware("http")
+async def _require_login(request: Request, call_next):
+    """除公开端点外的所有 /api/* 需携带有效会话 Cookie，否则返回 401。
+
+    /api/me 也放行到 handler：handler 内部按有无有效会话返回 me 或 401，
+    前端据此决定显示登录框还是主界面。
+    """
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)  # 静态页面等无需鉴权
+    if path.startswith(auth.PUBLIC_API_PREFIXES):
+        return await call_next(request)
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not token or not auth.validate_token(token):
+        return JSONResponse({"ok": False, "error": "未登录或会话已过期", "auth": True}, status_code=401)
+    return await call_next(request)
+
+
 def _settings_path() -> str | None:
     return os.environ.get("CDC_SETTINGS") or None
 
@@ -70,7 +90,161 @@ def _err(msg: str):
     return {"ok": False, "error": str(msg)}
 
 
-# ----------------------------- 只读端点 -----------------------------
+# ----------------------------- 登录鉴权 -----------------------------
+
+@app.get("/api/health")
+def api_health():
+    """无鉴权健康检查端点(供 Docker HEALTHCHECK 用)，恒返回 ok。"""
+    return _ok({"status": "ok"})
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    """返回当前登录用户；未登录返回 401，前端据此切换登录/主界面。"""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    username = auth.validate_token(token) if token else None
+    if not username:
+        return JSONResponse({"ok": False, "error": "未登录", "auth": True}, status_code=401)
+    return _ok({"username": username, "session_seconds": auth.SESSION_SECONDS})
+
+
+@app.post("/api/login")
+async def api_login(request: Request):
+    """校验用户名+密码，成功则签发会话 Cookie。body: {username, password}"""
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"请求体非法 JSON：{e}", "auth": True}, status_code=400)
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    if not auth.verify_password(username, password):
+        # 取真实客户端 IP（支持反代 X-Forwarded-For）
+        forwarded = request.headers.get("X-Forwarded-For")
+        client_ip = forwarded.split(",")[0].strip() if forwarded else (
+            request.client.host if request.client else "unknown"
+        )
+        auth.record_fail(client_ip)
+        return JSONResponse({"ok": False, "error": "用户名或密码错误", "auth": True}, status_code=401)
+    token = auth.issue_token(username)
+    resp = JSONResponse({"ok": True, "data": {"username": username}})
+    resp.set_cookie(
+        auth.COOKIE_NAME, token,
+        max_age=auth.SESSION_SECONDS, httponly=True, samesite="lax",
+        secure=auth.COOKIE_SECURE, path="/",
+    )
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout():
+    """清除会话 Cookie。"""
+    resp = JSONResponse({"ok": True, "data": {"logged_out": True}})
+    resp.delete_cookie(auth.COOKIE_NAME, path="/")
+    return resp
+
+
+@app.get("/api/alerts")
+def api_alerts():
+    """返回告警列表（最新在前）。需要已登录。"""
+    return _ok(auth.get_alerts())
+
+
+@app.post("/api/alerts/record")
+async def api_record_alert(request: Request):
+    """前端主动记录一条操作告警（如用户确认执行高风险 SQL 后调用）。"""
+    import time
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return _err(f"请求体非法 JSON：{e}")
+    ip = (request.client.host if request.client else "") or ""
+    token = request.cookies.get(auth.COOKIE_NAME, "")
+    username = auth.validate_token(token) if token else ""
+    entry = {
+        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "type": body.get("type", "risky_query"),
+        "action": body.get("action", "confirmed_execute"),
+        "ip": ip,
+        "user": username or "—",
+        "detail": body.get("detail", ""),
+        "sql": (body.get("sql") or "")[:500],
+    }
+    auth.record_alert(entry)
+    return _ok({"recorded": True})
+
+
+@app.post("/api/ai/check")
+async def api_ai_check(request: Request):
+    """用 AI 检测 SQL 风险。配置 settings.yaml 的 ai 段后生效；未配置时跳过(返回 skipped)。"""
+    import json as _json
+    import urllib.request as _req
+    import urllib.error
+    try:
+        body = await request.json()
+    except Exception as e:  # noqa: BLE001
+        return _err(f"请求体非法 JSON：{e}")
+    sql = (body.get("sql") or "").strip()
+    if not sql:
+        return _err("sql 为空")
+    try:
+        s = config_store.read_settings_dict()
+        ai_cfg = s.get("ai") or {}
+        base_url = (ai_cfg.get("url") or "").rstrip("/")
+        api_key = ai_cfg.get("key") or ""
+        model = ai_cfg.get("model") or "gpt-4o-mini"
+    except Exception as e:  # noqa: BLE001
+        return _err(f"配置读取失败：{e}")
+    if not base_url or not api_key:
+        return _ok({"risk": False, "skipped": True, "reason": "AI 未配置"})
+    prompt = (
+        "你是一个数据库安全审计助手。请严格按照以下规则判断 SQL 语句是否属于高风险操作。\n\n"
+        "【高风险（risk=true）】——以下任何一条满足即为高风险，必须返回 risk=true：\n"
+        "1. 增：INSERT、REPLACE、LOAD DATA、IMPORT\n"
+        "2. 删：DELETE、DROP、TRUNCATE\n"
+        "3. 改：UPDATE、ALTER、RENAME、MODIFY\n"
+        "4. 权限与结构：CREATE、GRANT、REVOKE、CALL、EXECUTE、MERGE\n"
+        "5. 任何会导致数据写入、数据删除、表结构变更、权限变更的操作\n"
+        "6. 批量操作或不带 WHERE 条件的 UPDATE/DELETE\n\n"
+        "【低风险（risk=false）】——仅以下情况才是低风险：\n"
+        "纯只读查询：SELECT（不含子查询写操作）、SHOW、EXPLAIN、DESCRIBE\n\n"
+        "判断原则：宁可误报，不可漏报。只要语句涉及增、删、改或其他任何非只读操作，一律返回 risk=true。\n\n"
+        "请只返回如下 JSON，不要有任何多余内容：\n"
+        '{"risk": true/false, "level": "high"/"low", "reason": "一句话说明风险原因"}\n\n'
+        f"SQL：\n{sql}"
+    )
+    payload = _json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 120,
+        "temperature": 0,
+    }).encode("utf-8")
+    api_url = f"{base_url}/chat/completions"
+    http_req = _req.Request(
+        api_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with _req.urlopen(http_req, timeout=15) as resp:
+            resp_body = _json.loads(resp.read().decode("utf-8"))
+        text = resp_body["choices"][0]["message"]["content"].strip()
+        # 提取 JSON（模型可能在前后多输出内容）
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            result = _json.loads(text[start:end])
+        else:
+            result = {"risk": False, "level": "low", "reason": text}
+        return _ok(result)
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")[:300]
+        return _err(f"AI API 返回 {e.code}：{err_body}")
+    except Exception as e:  # noqa: BLE001
+        return _err(f"AI 请求失败：{e}")
 
 @app.get("/api/connectors")
 def api_connectors():
