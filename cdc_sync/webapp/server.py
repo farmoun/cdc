@@ -151,7 +151,8 @@ def api_alerts():
 @app.post("/api/alerts/record")
 async def api_record_alert(request: Request):
     """前端主动记录一条操作告警（如用户确认执行高风险 SQL 后调用）。"""
-    import time
+    from datetime import datetime
+
     try:
         body = await request.json()
     except Exception as e:  # noqa: BLE001
@@ -160,7 +161,7 @@ async def api_record_alert(request: Request):
     token = request.cookies.get(auth.COOKIE_NAME, "")
     username = auth.validate_token(token) if token else ""
     entry = {
-        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+        "time": datetime.now(auth._TZ_CST).strftime("%Y-%m-%d %H:%M:%S"),
         "type": body.get("type", "risky_query"),
         "action": body.get("action", "confirmed_execute"),
         "ip": ip,

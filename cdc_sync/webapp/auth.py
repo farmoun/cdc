@@ -22,6 +22,7 @@ import os
 import secrets
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -47,6 +48,8 @@ PUBLIC_API_PATHS = frozenset({"/api/login", "/api/logout", "/api/health", "/api/
 # 滑动窗口：同一 IP 在 BRUTE_WINDOW_SECONDS 内失败次数 >= BRUTE_THRESHOLD 触发告警
 BRUTE_WINDOW_SECONDS: int = 60
 BRUTE_THRESHOLD: int = 10
+# 告警时间统一按东八区(+8)显示，不随部署机器时区变化
+_TZ_CST = timezone(timedelta(hours=8))
 # 内存 + 文件各最多保留 200 条
 _ALERT_MAX_KEEP: int = 200
 
@@ -105,7 +108,7 @@ def record_fail(ip: str) -> None:
         # 恰好越过阈值时触发一次告警（避免每次失败都重复告警）
         if count == BRUTE_THRESHOLD:
             entry = {
-                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now)),
+                "time": datetime.fromtimestamp(now, _TZ_CST).strftime("%Y-%m-%d %H:%M:%S"),
                 "type": "brute_force",
                 "action": "login_fail",
                 "ip": ip,
