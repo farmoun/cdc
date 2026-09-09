@@ -160,7 +160,7 @@ async def api_record_alert(request: Request):
     token = request.cookies.get(auth.COOKIE_NAME, "")
     username = auth.validate_token(token) if token else ""
     entry = {
-        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
         "type": body.get("type", "risky_query"),
         "action": body.get("action", "confirmed_execute"),
         "ip": ip,

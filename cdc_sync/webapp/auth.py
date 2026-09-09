@@ -105,7 +105,7 @@ def record_fail(ip: str) -> None:
         # 恰好越过阈值时触发一次告警（避免每次失败都重复告警）
         if count == BRUTE_THRESHOLD:
             entry = {
-                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)),
+                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now)),
                 "type": "brute_force",
                 "action": "login_fail",
                 "ip": ip,
