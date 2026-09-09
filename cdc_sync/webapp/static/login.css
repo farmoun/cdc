@@ -1,0 +1,63 @@
+/* 登录页独立样式 —— 复用 style.css 的设计令牌配色 */
+* , *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0; min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+  font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+}
+
+.login-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 36px;
+  width: min(360px, 90vw);
+  display: flex; flex-direction: column; gap: 16px;
+  box-shadow: var(--shadow);
+}
+.login-box .logo { font-size: 30px; text-align: center; }
+.login-box h2 {
+  margin: 0; color: var(--text);
+  font-size: 17px; font-weight: 600; text-align: center;
+}
+.login-box .sub { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: -8px; }
+
+.login-box label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; color: var(--text-muted); font-weight: 500;
+}
+.login-box input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.login-box input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.login-box .actions { margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+.login-box .btn {
+  width: 100%; justify-content: center;
+  padding: 9px 14px;
+  border: none; border-radius: var(--radius-sm);
+  background: var(--accent); color: #fff;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  font-family: inherit;
+  transition: background 120ms;
+}
+.login-box .btn:hover { background: var(--accent-hover); }
+.login-box .btn:disabled { opacity: .6; cursor: wait; }
+.login-box .action-msg { font-size: 12px; min-height: 16px; text-align: center; }
+.login-box .action-msg.err { color: var(--err); }
+
+.login-footer { text-align: center; font-size: 12px; color: var(--text-subtle); margin-top: 8px; }

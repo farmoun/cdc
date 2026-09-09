@@ -199,26 +199,9 @@
 
   <footer class="muted">cdc_sync · 监控面板</footer>
 
-  <!-- 登录遮罩：未登录时显示 -->
-  <div id="loginOverlay" class="login-overlay" style="display:none">
-    <form id="loginForm" class="login-box">
-      <h2>CDC 同步监控</h2>
-      <label>用户名
-        <input id="loginUser" type="text" value="root" autocomplete="username" readonly>
-      </label>
-      <label>密码
-        <input id="loginPass" type="password" autocomplete="current-password" placeholder="请输入密码">
-      </label>
-      <div class="actions">
-        <button type="submit" class="btn primary" id="loginBtn">登录</button>
-        <span id="loginMsg" class="action-msg"></span>
-      </div>
-    </form>
-  </div>
-
   <!-- 风险确认弹窗 -->
-  <div id="riskModal" class="login-overlay" style="display:none">
-    <div class="login-box risk-modal-box">
+  <div id="riskModal" class="modal-backdrop" style="display:none">
+    <div class="modal risk-modal-box">
       <div class="risk-modal-icon">⚠️</div>
       <h2 style="color:var(--warn)">高风险操作确认</h2>
       <p class="muted" style="text-align:center;margin:0">AI 检测到该语句包含高风险操作，执行后<strong style="color:var(--warn)">无法撤销</strong>，本次操作将记录到告警日志。</p>

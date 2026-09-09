@@ -13,8 +13,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 from . import auth
 
@@ -60,7 +59,7 @@ async def _require_login(request: Request, call_next):
     path = request.url.path
     if not path.startswith("/api/"):
         return await call_next(request)  # 静态页面等无需鉴权
-    if path.startswith(auth.PUBLIC_API_PREFIXES):
+    if path in auth.PUBLIC_API_PATHS:
         return await call_next(request)
     token = request.cookies.get(auth.COOKIE_NAME)
     if not token or not auth.validate_token(token):
@@ -715,9 +714,48 @@ async def api_set_ui_state(request: Request):
 
 # ----------------------------- 静态前端 -----------------------------
 
-if STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
-else:  # pragma: no cover
-    @app.get("/")
-    def _root():
-        return JSONResponse({"msg": "static dir missing"}, status_code=500)
+def _static(name: str):
+    return FileResponse(STATIC_DIR / name)
+
+
+@app.get("/login")
+def login_page():
+    """独立登录页。"""
+    return _static("login.html")
+
+
+@app.get("/logout")
+def logout_page():
+    """退出登录页（清 cookie 后跳登录页）。"""
+    resp = RedirectResponse(url="/login")
+    resp.delete_cookie(auth.COOKIE_NAME, path="/")
+    return resp
+
+
+@app.get("/")
+def root_page(request: Request):
+    """主界面：已登录返回 index.html，未登录 302 到 /login。"""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if token and auth.validate_token(token):
+        return _static("index.html")
+    return RedirectResponse(url="/login")
+
+
+@app.get("/style.css")
+def style_css():
+    return _static("style.css")
+
+
+@app.get("/app.js")
+def app_js():
+    return _static("app.js")
+
+
+@app.get("/login.css")
+def login_css():
+    return _static("login.css")
+
+
+@app.get("/login.js")
+def login_js():
+    return _static("login.js")

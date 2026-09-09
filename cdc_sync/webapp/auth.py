@@ -40,8 +40,8 @@ COOKIE_SECURE = os.environ.get("CDC_PANEL_COOKIE_SECURE", "0") == "1"
 DEFAULT_USER = "root"
 DEFAULT_PASSWORD = "cdc@123"
 
-# 不需要会话即可访问的 API 路径(前缀匹配)
-PUBLIC_API_PREFIXES = ("/api/login", "/api/logout", "/api/health", "/api/me")
+# 不需要会话即可访问的 API 路径（精确匹配，防前缀绕过）
+PUBLIC_API_PATHS = frozenset({"/api/login", "/api/logout", "/api/health", "/api/me"})
 
 # ---- 暴力破解检测 ------------------------------------------------------------
 # 滑动窗口：同一 IP 在 BRUTE_WINDOW_SECONDS 内失败次数 >= BRUTE_THRESHOLD 触发告警

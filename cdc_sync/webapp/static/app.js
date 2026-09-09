@@ -28,37 +28,10 @@ function clearPolling() {
   syncing = false;
 }
 
+// 会话失效/未登录：跳到独立登录页（不再用遮罩）
 function showLogin() {
   clearPolling();
-  $('#loginOverlay').style.display = 'flex';
-  $('#loginMsg').textContent = '';
-  $('#loginPass').value = '';
-  $('#loginPass').focus();
-}
-function hideLogin() {
-  $('#loginOverlay').style.display = 'none';
-}
-
-async function doLogin(ev) {
-  ev.preventDefault();
-  const btn = $('#loginBtn'); btn.disabled = true;
-  const msg = $('#loginMsg'); msg.textContent = ''; msg.className = 'action-msg';
-  const body = {
-    username: $('#loginUser').value.trim(),
-    password: $('#loginPass').value,
-  };
-  try {
-    const r = await fetch('/api/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const j = await r.json();
-    if (j.ok) { hideLogin(); initMain(); }
-    else { msg.textContent = '✗ ' + (j.error || '登录失败'); msg.className = 'action-msg err'; }
-  } catch (e) {
-    msg.textContent = '✗ ' + e; msg.className = 'action-msg err';
-  }
-  btn.disabled = false;
+  window.location.replace('/login');
 }
 
 async function doLogout() {
@@ -646,16 +619,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const last = localStorage.getItem('cdc_last_query');
   if (last) $('#queryInput').value = last;
-  // 登录
-  $('#loginForm').addEventListener('submit', doLogin);
+  // 退出登录
   $('#logoutBtn').addEventListener('click', doLogout);
-  // 先探 /api/me：已登录则初始化界面，未登录弹登录框
+  // 先探 /api/me：已登录才初始化界面，否则跳独立登录页
   getJSON('/api/me').then((r) => {
-    if (r.ok) { hideLogin(); initMain(); }
+    if (r.ok) initMain();
     else showLogin();
   }).catch(() => showLogin());
 });
-
 // 登录成功后才初始化轮询与状态
 function initMain() {
   // 无论开/停，先拉一次当前状态显示快照

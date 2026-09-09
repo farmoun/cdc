@@ -86,32 +86,6 @@ h2 {
 .btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .btn.small { padding: 3px 10px; font-size: 12px; margin-left: 6px; }
 
-/* === Login overlay === */
-.login-overlay {
-  position: fixed; inset: 0; z-index: 100;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(13,17,23,.85); backdrop-filter: blur(6px);
-}
-.login-box {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 28px 32px;
-  width: min(360px, 90vw); display: flex; flex-direction: column; gap: 16px;
-  box-shadow: var(--shadow);
-}
-.login-box h2 {
-  margin: 0; color: var(--text); font-size: 16px;
-  text-transform: none; letter-spacing: normal; text-align: center; font-weight: 600;
-}
-.login-box label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-muted); font-weight: 500; }
-.login-box input {
-  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-  padding: 8px 12px; border-radius: var(--radius-sm); font-size: 14px; font-family: inherit;
-  transition: border-color 120ms, box-shadow 120ms;
-}
-.login-box input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
-.login-box .actions { margin-top: 4px; }
-.login-box .btn { width: 100%; padding: 9px 14px; }
-
 /* === Status dots & badges === */
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 .dot.ok    { background: var(--ok);   box-shadow: 0 0 5px var(--ok); }
@@ -376,14 +350,14 @@ h2 {
 .btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .btn.small { padding: 3px 10px; font-size: 12px; }
 
-/* === Login overlay === */
-.login-overlay {
+/* === 通用弹窗（风险确认等） === */
+.modal-backdrop {
   position: fixed; inset: 0; z-index: 100;
   display: flex; align-items: center; justify-content: center;
   background: rgba(13,17,23,.85);
   backdrop-filter: blur(6px);
 }
-.login-box {
+.modal {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -392,16 +366,16 @@ h2 {
   display: flex; flex-direction: column; gap: 16px;
   box-shadow: var(--shadow);
 }
-.login-box h2 {
+.modal h2 {
   margin: 0; color: var(--text);
   font-size: 16px; text-transform: none; letter-spacing: normal;
   text-align: center; font-weight: 600;
 }
-.login-box label {
+.modal label {
   display: flex; flex-direction: column; gap: 5px;
   font-size: 12px; color: var(--text-muted); font-weight: 500;
 }
-.login-box input {
+.modal input {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
@@ -411,13 +385,13 @@ h2 {
   font-family: inherit;
   transition: border-color 120ms, box-shadow 120ms;
 }
-.login-box input:focus {
+.modal input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-subtle);
 }
-.login-box .actions { margin-top: 4px; }
-.login-box .btn { width: 100%; justify-content: center; padding: 9px 14px; }
+.modal .actions { margin-top: 4px; }
+.modal .btn { width: 100%; justify-content: center; padding: 9px 14px; }
 
 /* === Status dots & badges === */
 .dot {

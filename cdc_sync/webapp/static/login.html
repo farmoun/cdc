@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>登录 · CDC 同步监控</title>
+  <style>
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --surface-2: #273549; --surface-3: #2f3f57;
+      --text: #f1f5f9; --text-muted: #94a3b8; --text-subtle: #475569;
+      --border: #334155; --border-subtle: #1e293b;
+      --accent: #3b82f6; --accent-hover: #60a5fa; --accent-subtle: rgba(59,130,246,.18);
+      --ok: #22c55e; --warn: #f59e0b; --err: #ef4444;
+      --shadow: 0 4px 16px rgba(0,0,0,.55), 0 1px 4px rgba(0,0,0,.35);
+      --radius-sm: 6px; --radius-lg: 12px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f8fafc; --surface-3:#f1f5f9;
+        --text:#0f172a; --text-muted:#64748b; --text-subtle:#94a3b8;
+        --border:#e2e8f0; --border-subtle:#f1f5f9;
+        --accent:#2563eb; --accent-hover:#1d4ed8; --accent-subtle:rgba(37,99,235,.1);
+        --ok:#16a34a; --warn:#d97706; --err:#dc2626;
+        --shadow:0 4px 12px rgba(0,0,0,.1);
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/login.css">
+</head>
+<body>
+  <form id="loginForm" class="login-box" autocomplete="on">
+    <div class="logo">🛰️</div>
+    <h2>CDC 同步监控</h2>
+    <p class="sub">MySQL → Debezium → Kafka → ClickHouse</p>
+    <label>用户名
+      <input id="loginUser" type="text" value="root" autocomplete="username" readonly>
+    </label>
+    <label>密码
+      <input id="loginPass" type="password" autocomplete="current-password" placeholder="请输入密码" autofocus>
+    </label>
+    <div class="actions">
+      <button type="submit" class="btn" id="loginBtn">登 录</button>
+      <span id="loginMsg" class="action-msg"></span>
+    </div>
+    <div class="login-footer">需要有效账户才能访问监控面板</div>
+  </form>
+
+  <script src="/login.js"></script>
+  <script>
+    // 无服务端端跳转：JS 派发 pushState 以避免整页依赖
+    if (window.history.replaceState) {
+      window.history.replaceState({}, '', '/login');
+    }
+  </script>
+</body>
+</html>
